@@ -41,8 +41,123 @@ class ClassPassPlanTest extends TestCase
 
         $this->assertNotNull($classPassPlan);
         $this->assertModelExists($classPassPlan);
+        $this->assertSame(150000, $classPassPlan->price_cents);
+        $this->assertFalse($classPassPlan->allows_any_time);
+        $this->assertNull($classPassPlan->any_time_addon_price_cents);
         $this->assertTrue($classPassPlan->activityDirections()->whereKey($direction)->exists());
         $this->assertTrue($classPassPlan->trainerTypes()->whereKey($direction->account->defaultTrainerType()?->id)->exists());
+    }
+
+    public function test_owner_can_create_class_pass_plan_with_decimal_currency_price(): void
+    {
+        $owner = User::factory()->create();
+        $account = Account::factory()->create(['default_currency' => 'EUR']);
+        $account->addOwner($owner);
+        $direction = ActivityDirection::factory()->for($account)->create();
+
+        $this->actingAs($owner)
+            ->post(route('dashboard.accounts.class-pass-plans.store', $account), $this->validPayload($direction, [
+                'name' => 'Trial',
+                'slug' => 'trial',
+                'price' => '9.99',
+                'currency' => 'EUR',
+            ]))
+            ->assertRedirect(route('dashboard.accounts.class-pass-plans.index', $account));
+
+        $classPassPlan = ClassPassPlan::whereBelongsTo($account)->where('slug', 'trial')->firstOrFail();
+
+        $this->assertSame(999, $classPassPlan->price_cents);
+        $this->assertSame('EUR', $classPassPlan->currency);
+    }
+
+    public function test_owner_can_store_any_time_addon_settings(): void
+    {
+        $owner = User::factory()->create();
+        $account = Account::factory()->create(['default_currency' => 'UAH']);
+        $account->addOwner($owner);
+        $direction = ActivityDirection::factory()->for($account)->create();
+
+        $this->actingAs($owner)
+            ->post(route('dashboard.accounts.class-pass-plans.store', $account), $this->validPayload($direction, [
+                'name' => 'Morning',
+                'slug' => 'morning',
+                'available_until_time' => '12:00',
+                'allows_any_time' => '1',
+                'any_time_addon_price' => '75.50',
+            ]))
+            ->assertRedirect(route('dashboard.accounts.class-pass-plans.index', $account));
+
+        $classPassPlan = ClassPassPlan::whereBelongsTo($account)->where('slug', 'morning')->firstOrFail();
+
+        $this->assertTrue($classPassPlan->allows_any_time);
+        $this->assertSame(7550, $classPassPlan->any_time_addon_price_cents);
+    }
+
+    public function test_any_time_addon_price_is_required_when_enabled(): void
+    {
+        $owner = User::factory()->create();
+        $account = Account::factory()->create(['default_currency' => 'UAH']);
+        $account->addOwner($owner);
+        $direction = ActivityDirection::factory()->for($account)->create();
+
+        $this->actingAs($owner)
+            ->post(route('dashboard.accounts.class-pass-plans.store', $account), $this->validPayload($direction, [
+                'allows_any_time' => '1',
+                'any_time_addon_price' => null,
+            ]))
+            ->assertSessionHasErrors('any_time_addon_price');
+    }
+
+    public function test_any_time_addon_price_is_cleared_when_disabled(): void
+    {
+        $owner = User::factory()->create();
+        $account = Account::factory()->create(['default_currency' => 'UAH']);
+        $account->addOwner($owner);
+        $direction = ActivityDirection::factory()->for($account)->create();
+        $trainerType = $account->ensureDefaultTrainerType();
+        $classPassPlan = ClassPassPlan::factory()->for($account)->create([
+            'name' => 'Morning',
+            'slug' => 'morning',
+            'allows_any_time' => true,
+            'any_time_addon_price_cents' => 5000,
+        ]);
+        $classPassPlan->activityDirections()->sync([$direction->id]);
+        $classPassPlan->trainerTypes()->sync([$trainerType->id]);
+
+        $this->actingAs($owner)
+            ->put(route('dashboard.accounts.class-pass-plans.update', [$account, $classPassPlan]), $this->validPayload($direction, [
+                'name' => 'Morning updated',
+                'slug' => 'morning-updated',
+                'allows_any_time' => '0',
+                'any_time_addon_price' => 'invalid stale value',
+            ]))
+            ->assertRedirect(route('dashboard.accounts.class-pass-plans.index', $account));
+
+        $classPassPlan->refresh();
+
+        $this->assertFalse($classPassPlan->allows_any_time);
+        $this->assertNull($classPassPlan->any_time_addon_price_cents);
+    }
+
+    public function test_money_inputs_reject_more_than_two_decimals(): void
+    {
+        $owner = User::factory()->create();
+        $account = Account::factory()->create(['default_currency' => 'UAH']);
+        $account->addOwner($owner);
+        $direction = ActivityDirection::factory()->for($account)->create();
+
+        $this->actingAs($owner)
+            ->post(route('dashboard.accounts.class-pass-plans.store', $account), $this->validPayload($direction, [
+                'price' => '9.999',
+            ]))
+            ->assertSessionHasErrors('price');
+
+        $this->actingAs($owner)
+            ->post(route('dashboard.accounts.class-pass-plans.store', $account), $this->validPayload($direction, [
+                'allows_any_time' => '1',
+                'any_time_addon_price' => '1.999',
+            ]))
+            ->assertSessionHasErrors('any_time_addon_price');
     }
 
     public function test_owner_can_update_and_delete_class_pass_plan(): void
@@ -241,12 +356,14 @@ class ClassPassPlanTest extends TestCase
             'name' => 'START',
             'slug' => 'start',
             'description' => null,
-            'price_cents' => 150000,
+            'price' => '1500',
             'currency' => 'UAH',
             'sessions_count' => 4,
             'validity_days' => 30,
             'available_from_time' => null,
             'available_until_time' => null,
+            'allows_any_time' => '0',
+            'any_time_addon_price' => null,
             'activity_direction_ids' => [$activityDirection->id],
             'trainer_type_ids' => [$trainerType->id],
             'is_active' => '1',
