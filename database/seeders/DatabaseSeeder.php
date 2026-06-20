@@ -11,6 +11,7 @@ use App\Enums\SystemRole;
 use App\Models\Account;
 use App\Models\ActivityDirection;
 use App\Models\ClassType;
+use App\Models\Customer;
 use App\Models\Location;
 use App\Models\Room;
 use App\Models\ScheduleSeries;
@@ -117,6 +118,7 @@ class DatabaseSeeder extends Seeder
         $trainerTypes = $this->trainerTypes($account);
         $this->call(ClassPassPlanSeeder::class);
         $trainers = $this->trainers($account, $trainerTypes);
+        $this->customers($account);
 
         $this->schedule($account, $location, $bigHall, $classTypes, $trainers);
 
@@ -279,6 +281,34 @@ class DatabaseSeeder extends Seeder
         Storage::disk('public')->put($path, $response->body());
 
         return $path;
+    }
+
+    private function customers(Account $account): void
+    {
+        collect([
+            ['Олена Коваль', '+380671112233', 'olena.koval@example.com'],
+            ['Марія Шевченко', '+380501234567', 'maria.shevchenko@example.com'],
+            ['Анна Мельник', '+380931234567', 'anna.melnyk@example.com'],
+            ['Катерина Бондар', '+380681234567', 'kateryna.bondar@example.com'],
+            ['Юлія Мороз', '+380661234567', 'yuliia.moroz@example.com'],
+            ['Ірина Савчук', '+380991234567', 'iryna.savchuk@example.com'],
+            ['Наталія Ткаченко', '+380631234567', 'nataliia.tkachenko@example.com'],
+            ['Дарина Лисенко', '+380731234567', 'daryna.lysenko@example.com'],
+            ['Sofia Parker', '+380971234567', 'sofia.parker@example.com'],
+            ['Alina Dance', '+380951234567', 'alina.dance@example.com'],
+        ])->each(function (array $customer) use ($account): void {
+            [$name, $phone, $email] = $customer;
+
+            Customer::create([
+                'account_id' => $account->id,
+                'name' => $name,
+                'phone' => $phone,
+                'email' => $email,
+                'password' => Hash::make('password'),
+                'default_language' => $account->default_language,
+                'email_verified_at' => now(),
+            ]);
+        });
     }
 
     /**
