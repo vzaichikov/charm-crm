@@ -44,7 +44,7 @@ class ClassPassPlanTest extends TestCase
         $this->assertSame(150000, $classPassPlan->price_cents);
         $this->assertFalse($classPassPlan->allows_any_time);
         $this->assertNull($classPassPlan->any_time_addon_price_cents);
-        $this->assertTrue($classPassPlan->activityDirections()->whereKey($direction)->exists());
+        $this->assertTrue($classPassPlan->classTypes()->where('activity_direction_id', $direction->id)->exists());
         $this->assertTrue($classPassPlan->trainerTypes()->whereKey($direction->account->defaultTrainerType()?->id)->exists());
     }
 
@@ -121,7 +121,7 @@ class ClassPassPlanTest extends TestCase
             'allows_any_time' => true,
             'any_time_addon_price_cents' => 5000,
         ]);
-        $classPassPlan->activityDirections()->sync([$direction->id]);
+        $classPassPlan->classTypes()->sync([$this->classTypeForDirection($direction)->id]);
         $classPassPlan->trainerTypes()->sync([$trainerType->id]);
 
         $this->actingAs($owner)
@@ -168,7 +168,7 @@ class ClassPassPlanTest extends TestCase
         $direction = ActivityDirection::factory()->for($account)->create();
         $trainerType = $account->ensureDefaultTrainerType();
         $classPassPlan = ClassPassPlan::factory()->for($account)->create(['name' => 'START', 'slug' => 'start']);
-        $classPassPlan->activityDirections()->sync([$direction->id]);
+        $classPassPlan->classTypes()->sync([$this->classTypeForDirection($direction)->id]);
         $classPassPlan->trainerTypes()->sync([$trainerType->id]);
 
         $this->actingAs($owner)
@@ -197,7 +197,7 @@ class ClassPassPlanTest extends TestCase
         $direction = ActivityDirection::factory()->for($account)->create(['name' => 'Pole Dance']);
         $trainerType = $account->ensureDefaultTrainerType();
         $classPassPlan = ClassPassPlan::factory()->for($account)->create(['name' => 'START']);
-        $classPassPlan->activityDirections()->sync([$direction->id]);
+        $classPassPlan->classTypes()->sync([$this->classTypeForDirection($direction)->id]);
         $classPassPlan->trainerTypes()->sync([$trainerType->id]);
 
         $this->actingAs($owner)
@@ -243,17 +243,20 @@ class ClassPassPlanTest extends TestCase
             ->assertForbidden();
     }
 
-    public function test_class_pass_plan_cannot_use_activity_direction_from_another_account(): void
+    public function test_class_pass_plan_cannot_use_class_type_from_another_account(): void
     {
         $owner = User::factory()->create();
         $account = Account::factory()->create(['default_currency' => 'UAH']);
         $otherAccount = Account::factory()->create();
         $account->addOwner($owner);
         $otherDirection = ActivityDirection::factory()->for($otherAccount)->create();
+        $otherClassType = ClassType::factory()->for($otherAccount)->for($otherDirection, 'activityDirection')->create();
 
         $this->actingAs($owner)
-            ->post(route('dashboard.accounts.class-pass-plans.store', $account), $this->validPayload($otherDirection))
-            ->assertSessionHasErrors('activity_direction_ids.0');
+            ->post(route('dashboard.accounts.class-pass-plans.store', $account), $this->validPayload($otherDirection, [
+                'class_type_ids' => [$otherClassType->id],
+            ]))
+            ->assertSessionHasErrors('class_type_ids.0');
     }
 
     public function test_class_pass_plan_time_window_must_end_after_start(): void
@@ -290,7 +293,7 @@ class ClassPassPlanTest extends TestCase
             'available_until_time' => null,
             'is_active' => true,
         ]);
-        $fullDay->activityDirections()->sync([$poleDirection->id]);
+        $fullDay->classTypes()->sync([$poleType->id]);
         $fullDay->trainerTypes()->sync([$trainerType->id]);
 
         $morning = ClassPassPlan::factory()->for($account)->create([
@@ -298,7 +301,7 @@ class ClassPassPlanTest extends TestCase
             'available_until_time' => '12:00',
             'is_active' => true,
         ]);
-        $morning->activityDirections()->sync([$poleDirection->id]);
+        $morning->classTypes()->sync([$poleType->id]);
         $morning->trainerTypes()->sync([$trainerType->id]);
 
         $this->assertTrue($fullDay->isAvailableFor($this->scheduledClass($account, $location, $room, $poleType, $trainer, '2026-06-18 16:00:00')));
@@ -336,12 +339,23 @@ class ClassPassPlanTest extends TestCase
             'morning-base',
             'morning-semi-pro',
             'morning-pro',
+            'trial-class',
+            'private-top-60',
+            'private-top-90',
+            'private-standard-60',
+            'private-standard-90',
+            'big-hall-rental-60',
+            'big-hall-rental-90',
+            'big-hall-rental-120',
+            'small-hall-rental-60',
+            'small-hall-rental-90',
+            'small-hall-rental-120',
         ];
 
         $query = ClassPassPlan::whereBelongsTo($account)->whereIn('slug', $demoSlugs);
 
-        $this->assertSame(10, (clone $query)->count());
-        $this->assertSame(10, (clone $query)->distinct('slug')->count('slug'));
+        $this->assertSame(21, (clone $query)->count());
+        $this->assertSame(21, (clone $query)->distinct('slug')->count('slug'));
     }
 
     /**
@@ -351,6 +365,7 @@ class ClassPassPlanTest extends TestCase
     private function validPayload(ActivityDirection $activityDirection, array $overrides = []): array
     {
         $trainerType = $activityDirection->account->ensureDefaultTrainerType();
+        $classType = $this->classTypeForDirection($activityDirection);
 
         return [
             'name' => 'START',
@@ -364,12 +379,25 @@ class ClassPassPlanTest extends TestCase
             'available_until_time' => null,
             'allows_any_time' => '0',
             'any_time_addon_price' => null,
-            'activity_direction_ids' => [$activityDirection->id],
+            'class_type_ids' => [$classType->id],
             'trainer_type_ids' => [$trainerType->id],
+            'room_ids' => [],
+            'is_trial' => '0',
             'is_active' => '1',
             'sort_order' => 10,
             ...$overrides,
         ];
+    }
+
+    private function classTypeForDirection(ActivityDirection $activityDirection): ClassType
+    {
+        return ClassType::whereBelongsTo($activityDirection->account)
+            ->whereBelongsTo($activityDirection, 'activityDirection')
+            ->first()
+            ?? ClassType::factory()
+                ->for($activityDirection->account)
+                ->for($activityDirection, 'activityDirection')
+                ->create(['name' => $activityDirection->name, 'slug' => $activityDirection->slug]);
     }
 
     private function scheduledClass(

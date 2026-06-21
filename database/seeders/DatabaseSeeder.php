@@ -12,6 +12,7 @@ use App\Models\Account;
 use App\Models\ActivityDirection;
 use App\Models\ClassType;
 use App\Models\Customer;
+use App\Models\CustomerClassPass;
 use App\Models\Location;
 use App\Models\Room;
 use App\Models\ScheduleSeries;
@@ -121,6 +122,7 @@ class DatabaseSeeder extends Seeder
         $this->customers($account);
 
         $this->schedule($account, $location, $bigHall, $classTypes, $trainers);
+        $this->customerClassPasses($account);
 
         unset($platformUser);
     }
@@ -130,9 +132,13 @@ class DatabaseSeeder extends Seeder
         DB::statement('SET FOREIGN_KEY_CHECKS=0');
 
         foreach ([
+            'customer_class_pass_reservations',
+            'customer_class_passes',
             'class_bookings',
             'scheduled_classes',
             'schedule_series',
+            'class_pass_plan_room',
+            'class_pass_plan_class_type',
             'class_pass_plan_trainer_type',
             'class_pass_plan_activity_direction',
             'class_pass_plans',
@@ -222,14 +228,14 @@ class DatabaseSeeder extends Seeder
     {
         return [
             'trainer' => $account->trainerTypes()->create([
-                'name' => 'Trainer',
+                'name' => 'Тренер',
                 'icon' => 'user-round',
                 'color' => '#3B223F',
                 'is_default' => true,
                 'sort_order' => 10,
             ]),
             'top' => $account->trainerTypes()->create([
-                'name' => 'TOP-trainer',
+                'name' => 'ТОП-тренер',
                 'icon' => 'crown',
                 'color' => '#D80A7D',
                 'is_default' => false,
@@ -385,6 +391,49 @@ class DatabaseSeeder extends Seeder
             ]);
 
             $generator->execute($series);
+        }
+    }
+
+    private function customerClassPasses(Account $account): void
+    {
+        $passes = [
+            ['olena.koval@example.com', 'full-day-start', 'LDNA-1001'],
+            ['maria.shevchenko@example.com', 'morning-start', 'LDNA-1002'],
+            ['anna.melnyk@example.com', 'private-top-60', 'LDNA-1003'],
+        ];
+
+        foreach ($passes as $pass) {
+            [$email, $planSlug, $code] = $pass;
+            $customer = $account->customers()->where('email', $email)->first();
+            $classPassPlan = $account->classPassPlans()->where('slug', $planSlug)->first();
+
+            if (! $customer || ! $classPassPlan) {
+                continue;
+            }
+
+            CustomerClassPass::updateOrCreate(
+                ['code' => $code],
+                [
+                    'account_id' => $account->id,
+                    'customer_id' => $customer->id,
+                    'class_pass_plan_id' => $classPassPlan->id,
+                    'source' => 'manual',
+                    'status' => 'active',
+                    'plan_name' => $classPassPlan->name,
+                    'plan_slug' => $classPassPlan->slug,
+                    'price_cents' => $classPassPlan->price_cents,
+                    'currency' => $classPassPlan->currency,
+                    'sessions_count' => $classPassPlan->sessions_count,
+                    'validity_days' => $classPassPlan->validity_days,
+                    'reserved_sessions_count' => 0,
+                    'used_sessions_count' => 0,
+                    'purchased_at' => now()->subDays(2),
+                    'opened_at' => null,
+                    'expires_at' => null,
+                    'closed_at' => null,
+                    'is_active' => true,
+                ],
+            );
         }
     }
 }
