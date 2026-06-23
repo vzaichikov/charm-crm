@@ -64,6 +64,9 @@ class CharmpoleCatalogSyncTest extends TestCase
         $this->assertSame('#ffffff', $account->activityDirections()->where('slug', 'kids')->firstOrFail()->color);
         $this->assertSame(13, $account->classTypes()->whereIn('slug', array_keys(CharmpoleDemoCatalog::classTypes()))->count());
         $this->assertSame(21, $account->classPassPlans()->whereIn('slug', array_keys(CharmpoleDemoCatalog::classPassPlans()))->count());
+        $this->assertSame(11, $account->classPassPlans()->whereIn('slug', array_keys(CharmpoleDemoCatalog::classPassPlans()))->where('schedule_kind', ScheduleKind::GroupClass->value)->count());
+        $this->assertSame(4, $account->classPassPlans()->whereIn('slug', array_keys(CharmpoleDemoCatalog::classPassPlans()))->where('schedule_kind', ScheduleKind::PrivateLesson->value)->count());
+        $this->assertSame(6, $account->classPassPlans()->whereIn('slug', array_keys(CharmpoleDemoCatalog::classPassPlans()))->where('schedule_kind', ScheduleKind::RoomRental->value)->count());
 
         $this->assertFalse($account->classTypes()->where('slug', 'legacy-private')->exists());
         $this->assertFalse($account->classPassPlans()->where('slug', 'legacy-plan')->exists());
@@ -147,9 +150,9 @@ class CharmpoleCatalogSyncTest extends TestCase
             ->for($account)
             ->for($legacyDirection, 'activityDirection')
             ->create(['slug' => 'legacy-series-type', 'schedule_kind' => ScheduleKind::GroupClass->value]);
-        $legacyPlan = ClassPassPlan::factory()->for($account)->create(['slug' => 'legacy-plan']);
+        $legacyPlan = ClassPassPlan::factory()->for($account)->create(['slug' => 'legacy-plan', 'schedule_kind' => ScheduleKind::PrivateLesson->value]);
         $legacyPlan->classTypes()->sync([$legacyPrivateClassType->id]);
-        $protectedPlan = ClassPassPlan::factory()->for($account)->create(['slug' => 'legacy-protected-plan']);
+        $protectedPlan = ClassPassPlan::factory()->for($account)->create(['slug' => 'legacy-protected-plan', 'schedule_kind' => ScheduleKind::PrivateLesson->value]);
         $protectedPlan->classTypes()->sync([$legacyPrivateClassType->id]);
         $customer = Customer::factory()->for($account)->create();
         CustomerClassPass::factory()->for($account)->for($customer)->for($protectedPlan, 'classPassPlan')->create([

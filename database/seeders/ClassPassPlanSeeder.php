@@ -49,6 +49,7 @@ class ClassPassPlanSeeder extends Seeder
                 Arr::only($plan, [
                     'name',
                     'description',
+                    'schedule_kind',
                     'price_cents',
                     'sessions_count',
                     'validity_days',

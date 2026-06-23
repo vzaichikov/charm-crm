@@ -138,27 +138,27 @@ class CharmpoleDemoCatalog
         $groupTrainerTypes = ['trainer', 'top'];
 
         return [
-            'trial-class' => self::plan('Пробне заняття', 'trial-class', 'Пробне заняття для нового клієнта.', 25000, 1, null, 5, true, $groupClassTypes, $groupTrainerTypes),
-            'full-day-start' => self::plan('START повний день', 'full-day-start', 'Повний абонемент на 4 заняття.', 150000, 4, null, 10, false, $groupClassTypes, $groupTrainerTypes),
-            'full-day-amateur' => self::plan('AMATEUR повний день', 'full-day-amateur', 'Повний абонемент на 6 занять.', 200000, 6, null, 20, false, $groupClassTypes, $groupTrainerTypes),
-            'full-day-base' => self::plan('BASE повний день', 'full-day-base', 'Повний абонемент на 8 занять.', 250000, 8, null, 30, false, $groupClassTypes, $groupTrainerTypes),
-            'full-day-semi-pro' => self::plan('Semi pro повний день', 'full-day-semi-pro', 'Повний абонемент на 12 занять.', 350000, 12, null, 40, false, $groupClassTypes, $groupTrainerTypes),
-            'full-day-pro' => self::plan('Pro повний день', 'full-day-pro', 'Повний абонемент на 16 занять.', 440000, 16, null, 50, false, $groupClassTypes, $groupTrainerTypes),
-            'morning-start' => self::plan('START ранок', 'morning-start', 'Ранковий абонемент на 4 заняття до 12:00.', 140000, 4, '12:00', 60, false, $groupClassTypes, $groupTrainerTypes),
-            'morning-amateur' => self::plan('AMATEUR ранок', 'morning-amateur', 'Ранковий абонемент на 6 занять до 12:00.', 190000, 6, '12:00', 70, false, $groupClassTypes, $groupTrainerTypes),
-            'morning-base' => self::plan('BASE ранок', 'morning-base', 'Ранковий абонемент на 8 занять до 12:00.', 240000, 8, '12:00', 80, false, $groupClassTypes, $groupTrainerTypes),
-            'morning-semi-pro' => self::plan('Semi pro ранок', 'morning-semi-pro', 'Ранковий абонемент на 12 занять до 12:00.', 310000, 12, '12:00', 90, false, $groupClassTypes, $groupTrainerTypes),
-            'morning-pro' => self::plan('Pro ранок', 'morning-pro', 'Ранковий абонемент на 16 занять до 12:00.', 390000, 16, '12:00', 100, false, $groupClassTypes, $groupTrainerTypes),
-            'private-top-60' => self::plan('TOP-1', 'private-top-60', '1 год. з ТОП-тренером для 1 людини.', 110000, 1, null, 200, false, ['individualne-60-xv'], ['top']),
-            'private-top-90' => self::plan('TOP-1.5', 'private-top-90', '1.5 год. з ТОП-тренером для 1 людини.', 160000, 1, null, 210, false, ['individualne-90-xv'], ['top']),
-            'private-standard-60' => self::plan('STANDART-1', 'private-standard-60', '1 год. з тренером для 1 людини.', 100000, 1, null, 220, false, ['individualne-60-xv'], ['trainer']),
-            'private-standard-90' => self::plan('STANDART-1.5', 'private-standard-90', '1.5 год. з тренером для 1 людини.', 140000, 1, null, 230, false, ['individualne-90-xv'], ['trainer']),
-            'big-hall-rental-60' => self::plan('Великий зал 1г', 'big-hall-rental-60', 'Оренда великого залу на 1 годину.', 55000, 1, null, 300, false, ['orenda-60-xv'], [], ['big-hall']),
-            'big-hall-rental-90' => self::plan('Великий зал 1.5г', 'big-hall-rental-90', 'Оренда великого залу на 1.5 години.', 65000, 1, null, 310, false, ['orenda-90-xv'], [], ['big-hall']),
-            'big-hall-rental-120' => self::plan('Великий зал 2г', 'big-hall-rental-120', 'Оренда великого залу на 2 години.', 85000, 1, null, 320, false, ['orenda-120-xv'], [], ['big-hall']),
-            'small-hall-rental-60' => self::plan('Малий зал 1г', 'small-hall-rental-60', 'Оренда малого залу на 1 годину.', 40000, 1, null, 330, false, ['orenda-60-xv'], [], ['small-hall']),
-            'small-hall-rental-90' => self::plan('Малий зал 1.5г', 'small-hall-rental-90', 'Оренда малого залу на 1.5 години.', 60000, 1, null, 340, false, ['orenda-90-xv'], [], ['small-hall']),
-            'small-hall-rental-120' => self::plan('Малий зал 2г', 'small-hall-rental-120', 'Оренда малого залу на 2 години.', 70000, 1, null, 350, false, ['orenda-120-xv'], [], ['small-hall']),
+            'trial-class' => self::plan(ScheduleKind::GroupClass, 'Пробне заняття', 'trial-class', 'Пробне заняття для нового клієнта.', 25000, 1, null, 5, true, $groupClassTypes, $groupTrainerTypes),
+            'full-day-start' => self::plan(ScheduleKind::GroupClass, 'START повний день', 'full-day-start', 'Повний абонемент на 4 заняття.', 150000, 4, null, 10, false, $groupClassTypes, $groupTrainerTypes),
+            'full-day-amateur' => self::plan(ScheduleKind::GroupClass, 'AMATEUR повний день', 'full-day-amateur', 'Повний абонемент на 6 занять.', 200000, 6, null, 20, false, $groupClassTypes, $groupTrainerTypes),
+            'full-day-base' => self::plan(ScheduleKind::GroupClass, 'BASE повний день', 'full-day-base', 'Повний абонемент на 8 занять.', 250000, 8, null, 30, false, $groupClassTypes, $groupTrainerTypes),
+            'full-day-semi-pro' => self::plan(ScheduleKind::GroupClass, 'Semi pro повний день', 'full-day-semi-pro', 'Повний абонемент на 12 занять.', 350000, 12, null, 40, false, $groupClassTypes, $groupTrainerTypes),
+            'full-day-pro' => self::plan(ScheduleKind::GroupClass, 'Pro повний день', 'full-day-pro', 'Повний абонемент на 16 занять.', 440000, 16, null, 50, false, $groupClassTypes, $groupTrainerTypes),
+            'morning-start' => self::plan(ScheduleKind::GroupClass, 'START ранок', 'morning-start', 'Ранковий абонемент на 4 заняття до 12:00.', 140000, 4, '12:00', 60, false, $groupClassTypes, $groupTrainerTypes),
+            'morning-amateur' => self::plan(ScheduleKind::GroupClass, 'AMATEUR ранок', 'morning-amateur', 'Ранковий абонемент на 6 занять до 12:00.', 190000, 6, '12:00', 70, false, $groupClassTypes, $groupTrainerTypes),
+            'morning-base' => self::plan(ScheduleKind::GroupClass, 'BASE ранок', 'morning-base', 'Ранковий абонемент на 8 занять до 12:00.', 240000, 8, '12:00', 80, false, $groupClassTypes, $groupTrainerTypes),
+            'morning-semi-pro' => self::plan(ScheduleKind::GroupClass, 'Semi pro ранок', 'morning-semi-pro', 'Ранковий абонемент на 12 занять до 12:00.', 310000, 12, '12:00', 90, false, $groupClassTypes, $groupTrainerTypes),
+            'morning-pro' => self::plan(ScheduleKind::GroupClass, 'Pro ранок', 'morning-pro', 'Ранковий абонемент на 16 занять до 12:00.', 390000, 16, '12:00', 100, false, $groupClassTypes, $groupTrainerTypes),
+            'private-top-60' => self::plan(ScheduleKind::PrivateLesson, 'TOP-1', 'private-top-60', '1 год. з ТОП-тренером для 1 людини.', 110000, 1, null, 200, false, ['individualne-60-xv'], ['top']),
+            'private-top-90' => self::plan(ScheduleKind::PrivateLesson, 'TOP-1.5', 'private-top-90', '1.5 год. з ТОП-тренером для 1 людини.', 160000, 1, null, 210, false, ['individualne-90-xv'], ['top']),
+            'private-standard-60' => self::plan(ScheduleKind::PrivateLesson, 'STANDART-1', 'private-standard-60', '1 год. з тренером для 1 людини.', 100000, 1, null, 220, false, ['individualne-60-xv'], ['trainer']),
+            'private-standard-90' => self::plan(ScheduleKind::PrivateLesson, 'STANDART-1.5', 'private-standard-90', '1.5 год. з тренером для 1 людини.', 140000, 1, null, 230, false, ['individualne-90-xv'], ['trainer']),
+            'big-hall-rental-60' => self::plan(ScheduleKind::RoomRental, 'Великий зал 1г', 'big-hall-rental-60', 'Оренда великого залу на 1 годину.', 55000, 1, null, 300, false, ['orenda-60-xv'], [], ['big-hall']),
+            'big-hall-rental-90' => self::plan(ScheduleKind::RoomRental, 'Великий зал 1.5г', 'big-hall-rental-90', 'Оренда великого залу на 1.5 години.', 65000, 1, null, 310, false, ['orenda-90-xv'], [], ['big-hall']),
+            'big-hall-rental-120' => self::plan(ScheduleKind::RoomRental, 'Великий зал 2г', 'big-hall-rental-120', 'Оренда великого залу на 2 години.', 85000, 1, null, 320, false, ['orenda-120-xv'], [], ['big-hall']),
+            'small-hall-rental-60' => self::plan(ScheduleKind::RoomRental, 'Малий зал 1г', 'small-hall-rental-60', 'Оренда малого залу на 1 годину.', 40000, 1, null, 330, false, ['orenda-60-xv'], [], ['small-hall']),
+            'small-hall-rental-90' => self::plan(ScheduleKind::RoomRental, 'Малий зал 1.5г', 'small-hall-rental-90', 'Оренда малого залу на 1.5 години.', 60000, 1, null, 340, false, ['orenda-90-xv'], [], ['small-hall']),
+            'small-hall-rental-120' => self::plan(ScheduleKind::RoomRental, 'Малий зал 2г', 'small-hall-rental-120', 'Оренда малого залу на 2 години.', 70000, 1, null, 350, false, ['orenda-120-xv'], [], ['small-hall']),
         ];
     }
 
@@ -280,6 +280,7 @@ class CharmpoleDemoCatalog
      * @return array<string, mixed>
      */
     private static function plan(
+        ScheduleKind $scheduleKind,
         string $name,
         string $slug,
         string $description,
@@ -295,6 +296,7 @@ class CharmpoleDemoCatalog
         return [
             'name' => $name,
             'slug' => $slug,
+            'schedule_kind' => $scheduleKind->value,
             'description' => $description,
             'price_cents' => $priceCents,
             'sessions_count' => $sessionsCount,

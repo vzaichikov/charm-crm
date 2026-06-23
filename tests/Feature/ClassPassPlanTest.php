@@ -228,9 +228,9 @@ class ClassPassPlanTest extends TestCase
         $privateType = ClassType::factory()->for($account)->create(['name' => 'Private Pole', 'schedule_kind' => 'private_lesson']);
         $rentalType = ClassType::factory()->for($account)->create(['name' => 'Rental 60', 'schedule_kind' => 'room_rental']);
 
-        $groupPlan = ClassPassPlan::factory()->for($account)->create(['name' => 'Group pass']);
-        $privatePlan = ClassPassPlan::factory()->for($account)->create(['name' => 'Private pass']);
-        $rentalPlan = ClassPassPlan::factory()->for($account)->create(['name' => 'Rental pass']);
+        $groupPlan = ClassPassPlan::factory()->for($account)->create(['name' => 'Group pass', 'schedule_kind' => 'group_class']);
+        $privatePlan = ClassPassPlan::factory()->for($account)->create(['name' => 'Private pass', 'schedule_kind' => 'private_lesson']);
+        $rentalPlan = ClassPassPlan::factory()->for($account)->create(['name' => 'Rental pass', 'schedule_kind' => 'room_rental']);
 
         $groupPlan->classTypes()->sync([$groupType->id]);
         $privatePlan->classTypes()->sync([$privateType->id]);
@@ -259,6 +259,71 @@ class ClassPassPlanTest extends TestCase
             ->assertSee('Rental pass')
             ->assertDontSee('Group pass')
             ->assertDontSee('Private pass');
+    }
+
+    public function test_group_class_pass_plan_can_use_multiple_matching_class_types(): void
+    {
+        $owner = User::factory()->create();
+        $account = Account::factory()->create(['default_currency' => 'UAH']);
+        $account->addOwner($owner);
+        $direction = ActivityDirection::factory()->for($account)->create();
+        $firstClassType = $this->classTypeForDirection($direction);
+        $secondClassType = ClassType::factory()->for($account)->for($direction, 'activityDirection')->create([
+            'name' => 'Stretching',
+            'slug' => 'stretching',
+            'schedule_kind' => 'group_class',
+        ]);
+
+        $this->actingAs($owner)
+            ->post(route('dashboard.accounts.class-pass-plans.store', $account), $this->validPayload($direction, [
+                'class_type_ids' => [$firstClassType->id, $secondClassType->id],
+            ]))
+            ->assertRedirect(route('dashboard.accounts.class-pass-plans.index', [$account, 'tab' => 'group_class']));
+
+        $classPassPlan = ClassPassPlan::whereBelongsTo($account)->where('slug', 'start')->firstOrFail();
+
+        $this->assertSame('group_class', $classPassPlan->schedule_kind->value);
+        $this->assertEqualsCanonicalizing([$firstClassType->id, $secondClassType->id], $classPassPlan->classTypes()->pluck('class_types.id')->all());
+    }
+
+    public function test_private_and_rental_class_pass_plans_require_one_matching_class_type(): void
+    {
+        $owner = User::factory()->create();
+        $account = Account::factory()->create(['default_currency' => 'UAH']);
+        $account->addOwner($owner);
+        $direction = ActivityDirection::factory()->for($account)->create();
+        $privateTypes = ClassType::factory()->for($account)->count(2)->create(['schedule_kind' => 'private_lesson']);
+        $rentalTypes = ClassType::factory()->for($account)->count(2)->create(['schedule_kind' => 'room_rental']);
+
+        $this->actingAs($owner)
+            ->post(route('dashboard.accounts.class-pass-plans.store', $account), $this->validPayload($direction, [
+                'schedule_kind' => 'private_lesson',
+                'class_type_ids' => $privateTypes->modelKeys(),
+            ]))
+            ->assertSessionHasErrors('class_type_ids');
+
+        $this->actingAs($owner)
+            ->post(route('dashboard.accounts.class-pass-plans.store', $account), $this->validPayload($direction, [
+                'schedule_kind' => 'room_rental',
+                'class_type_ids' => $rentalTypes->modelKeys(),
+            ]))
+            ->assertSessionHasErrors('class_type_ids');
+    }
+
+    public function test_class_pass_plan_class_types_must_match_selected_schedule_kind(): void
+    {
+        $owner = User::factory()->create();
+        $account = Account::factory()->create(['default_currency' => 'UAH']);
+        $account->addOwner($owner);
+        $direction = ActivityDirection::factory()->for($account)->create();
+        $groupClassType = $this->classTypeForDirection($direction);
+
+        $this->actingAs($owner)
+            ->post(route('dashboard.accounts.class-pass-plans.store', $account), $this->validPayload($direction, [
+                'schedule_kind' => 'private_lesson',
+                'class_type_ids' => [$groupClassType->id],
+            ]))
+            ->assertSessionHasErrors('class_type_ids');
     }
 
     public function test_owner_can_copy_class_pass_plan_with_relationships(): void
@@ -314,6 +379,7 @@ class ClassPassPlanTest extends TestCase
         $this->assertSame('12:00:00', $copy->available_until_time);
         $this->assertTrue($copy->allows_any_time);
         $this->assertSame(5000, $copy->any_time_addon_price_cents);
+        $this->assertSame('group_class', $copy->schedule_kind->value);
         $this->assertTrue($copy->is_trial);
         $this->assertFalse($copy->is_active);
         $this->assertSame(15, $copy->sort_order);
@@ -466,6 +532,9 @@ class ClassPassPlanTest extends TestCase
 
         $this->assertSame(21, (clone $query)->count());
         $this->assertSame(21, (clone $query)->distinct('slug')->count('slug'));
+        $this->assertSame(11, (clone $query)->where('schedule_kind', 'group_class')->count());
+        $this->assertSame(4, (clone $query)->where('schedule_kind', 'private_lesson')->count());
+        $this->assertSame(6, (clone $query)->where('schedule_kind', 'room_rental')->count());
     }
 
     /**
@@ -480,6 +549,7 @@ class ClassPassPlanTest extends TestCase
         return [
             'name' => 'START',
             'slug' => 'start',
+            'schedule_kind' => 'group_class',
             'description' => null,
             'price' => '1500',
             'currency' => 'UAH',
@@ -507,7 +577,7 @@ class ClassPassPlanTest extends TestCase
             ?? ClassType::factory()
                 ->for($activityDirection->account)
                 ->for($activityDirection, 'activityDirection')
-                ->create(['name' => $activityDirection->name, 'slug' => $activityDirection->slug]);
+                ->create(['name' => $activityDirection->name, 'slug' => $activityDirection->slug, 'schedule_kind' => 'group_class']);
     }
 
     private function scheduledClass(
