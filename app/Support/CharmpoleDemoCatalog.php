@@ -268,6 +268,7 @@ class CharmpoleDemoCatalog
             'schedule_kind' => $scheduleKind->value,
             'default_duration_minutes' => $durationMinutes,
             'booking_cutoff_minutes' => 60,
+            'cancellation_cutoff_minutes' => 1440,
             'default_capacity' => $capacity,
             'is_active' => true,
         ];

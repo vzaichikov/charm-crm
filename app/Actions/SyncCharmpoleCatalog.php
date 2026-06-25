@@ -185,6 +185,7 @@ class SyncCharmpoleCatalog
                     'schedule_kind' => $classType['schedule_kind'],
                     'default_duration_minutes' => $classType['default_duration_minutes'],
                     'booking_cutoff_minutes' => $classType['booking_cutoff_minutes'],
+                    'cancellation_cutoff_minutes' => $classType['cancellation_cutoff_minutes'],
                     'default_capacity' => $classType['default_capacity'],
                     'is_active' => $classType['is_active'],
                 ],
@@ -410,7 +411,7 @@ class SyncCharmpoleCatalog
             'class_types' => $account->classTypes()
                 ->with('activityDirection:id,slug')
                 ->orderBy('id')
-                ->get(['id', 'activity_direction_id', 'name', 'slug', 'description', 'color', 'schedule_kind', 'default_duration_minutes', 'booking_cutoff_minutes', 'default_capacity', 'is_active'])
+                ->get(['id', 'activity_direction_id', 'name', 'slug', 'description', 'color', 'schedule_kind', 'default_duration_minutes', 'booking_cutoff_minutes', 'cancellation_cutoff_minutes', 'default_capacity', 'is_active'])
                 ->toArray(),
             'class_pass_plans' => $account->classPassPlans()
                 ->with([

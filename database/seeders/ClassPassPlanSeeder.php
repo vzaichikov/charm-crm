@@ -131,6 +131,7 @@ class ClassPassPlanSeeder extends Seeder
                         'schedule_kind' => $classType['schedule_kind'],
                         'default_duration_minutes' => $classType['default_duration_minutes'],
                         'booking_cutoff_minutes' => $classType['booking_cutoff_minutes'],
+                        'cancellation_cutoff_minutes' => $classType['cancellation_cutoff_minutes'],
                         'default_capacity' => $classType['default_capacity'],
                         'is_active' => $classType['is_active'],
                     ],
