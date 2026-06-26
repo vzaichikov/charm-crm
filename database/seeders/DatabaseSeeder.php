@@ -2,7 +2,6 @@
 
 namespace Database\Seeders;
 
-use App\Actions\GenerateScheduleOccurrences;
 use App\Enums\AccountRole;
 use App\Enums\ScheduleSeriesStatus;
 use App\Enums\SubscriptionStatus;
@@ -10,8 +9,6 @@ use App\Enums\SystemRole;
 use App\Models\Account;
 use App\Models\ActivityDirection;
 use App\Models\ClassType;
-use App\Models\Customer;
-use App\Models\CustomerClassPass;
 use App\Models\Location;
 use App\Models\Room;
 use App\Models\ScheduleSeries;
@@ -25,9 +22,7 @@ use Illuminate\Database\Seeder;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
-use Illuminate\Support\Facades\Http;
-use Illuminate\Support\Facades\Storage;
-use Illuminate\Support\Str;
+use RuntimeException;
 
 class DatabaseSeeder extends Seeder
 {
@@ -35,35 +30,28 @@ class DatabaseSeeder extends Seeder
 
     public function run(): void
     {
+        $this->ensureCanSeedDemo();
+
+        $credentials = $this->demoCredentials();
+
         $this->clearDemoData();
 
-        $platformUser = User::create([
-            'name' => 'Platform Admin',
-            'email' => 'platform@example.com',
-            'password' => Hash::make('password'),
+        User::create([
+            'name' => $credentials['platform']['name'],
+            'email' => $credentials['platform']['email'],
+            'password' => Hash::make($credentials['platform']['password']),
             'system_role' => SystemRole::PlatformAdmin->value,
             'email_verified_at' => now(),
         ]);
 
         $owner = User::create([
-            'name' => 'Настя',
-            'email' => 'nastya@example.com',
-            'password' => Hash::make('password'),
+            'name' => $credentials['owner']['name'],
+            'email' => $credentials['owner']['email'],
+            'password' => Hash::make($credentials['owner']['password']),
             'email_verified_at' => now(),
         ]);
 
-        $account = Account::create([
-            'name' => 'Charmpole',
-            'slug' => 'charmpole',
-            'status' => 'active',
-            'default_language' => 'uk',
-            'default_currency' => 'UAH',
-            'logo_path' => 'brand/charmpole-icon.svg',
-            'brand_color' => '#d80a7d',
-            'timezone' => 'Europe/Kyiv',
-            'enabled_schedule_kinds' => CharmpoleDemoCatalog::enabledScheduleKinds(),
-            'schedule_kind_colors' => CharmpoleDemoCatalog::scheduleKindColors(),
-        ]);
+        $account = Account::create(CharmpoleDemoCatalog::account());
 
         $account->users()->attach($owner->id, [
             'role' => AccountRole::Owner->value,
@@ -89,65 +77,106 @@ class DatabaseSeeder extends Seeder
 
         $location = Location::create([
             'account_id' => $account->id,
-            'name' => 'Charmpole',
-            'slug' => 'charmpole',
-            'address' => 'Київ, проспект Берестейський (Перемоги), 56',
-            'phone' => '+380939470278',
-            'email' => 'hello@charmpole.dance',
-            'timezone' => 'Europe/Kyiv',
-            'is_active' => true,
+            ...CharmpoleDemoCatalog::location(),
         ]);
 
         $rooms = $this->rooms($account, $location);
-
         $directions = $this->directions($account);
         $classTypes = $this->classTypes($account, $directions);
         $trainerTypes = $this->trainerTypes($account);
+
         $this->call(ClassPassPlanSeeder::class);
+
         $trainers = $this->trainers($account, $trainerTypes);
-        $this->customers($account);
 
-        $this->schedule($account, $location, $rooms['big-hall'], $classTypes, $trainers);
-        $this->customerClassPasses($account);
+        $this->schedule($account, $location, $rooms, $classTypes, $trainers);
+    }
 
-        unset($platformUser);
+    private function ensureCanSeedDemo(): void
+    {
+        if (app()->isProduction()) {
+            throw new RuntimeException('DatabaseSeeder is disabled in production.');
+        }
+    }
+
+    /**
+     * @return array{platform: array{name: string, email: string, password: string}, owner: array{name: string, email: string, password: string}}
+     */
+    private function demoCredentials(): array
+    {
+        $credentials = config('demo.users');
+
+        if (! is_array($credentials)) {
+            throw new RuntimeException('Demo user credentials are not configured.');
+        }
+
+        foreach (['platform', 'owner'] as $key) {
+            $user = $credentials[$key] ?? [];
+
+            if (! is_array($user)) {
+                throw new RuntimeException("Demo {$key} user credentials are not configured.");
+            }
+
+            foreach (['name', 'email', 'password'] as $field) {
+                if (! is_string($user[$field] ?? null) || blank($user[$field])) {
+                    throw new RuntimeException("Demo {$key} {$field} must be configured in the local environment.");
+                }
+            }
+
+            if (! filter_var($user['email'], FILTER_VALIDATE_EMAIL)) {
+                throw new RuntimeException("Demo {$key} email must be a valid email address.");
+            }
+        }
+
+        return $credentials;
     }
 
     private function clearDemoData(): void
     {
         DB::statement('SET FOREIGN_KEY_CHECKS=0');
 
-        foreach ([
-            'customer_class_pass_reservations',
-            'customer_class_passes',
-            'class_bookings',
-            'scheduled_classes',
-            'schedule_series',
-            'class_pass_plan_room',
-            'class_pass_plan_class_type',
-            'class_pass_plan_trainer_type',
-            'class_pass_plan_activity_direction',
-            'class_pass_plans',
-            'activity_direction_class_pass_segment',
-            'class_pass_segments',
-            'rooms',
-            'locations',
-            'class_types',
-            'activity_directions',
-            'trainers',
-            'trainer_types',
-            'account_subscriptions',
-            'account_memberships',
-            'customers',
-            'accounts',
-            'subscription_plans',
-            'users',
-        ] as $table) {
-            DB::table($table)->truncate();
+        try {
+            foreach ([
+                'scheduled_class_cancellation_effects',
+                'scheduled_class_cancellations',
+                'customer_class_pass_adjustments',
+                'customer_class_pass_reservations',
+                'customer_class_passes',
+                'customer_purchases',
+                'website_leads',
+                'class_bookings',
+                'scheduled_classes',
+                'schedule_series',
+                'class_pass_plan_room',
+                'class_pass_plan_class_type',
+                'class_pass_plan_trainer_type',
+                'class_pass_plan_activity_direction',
+                'class_pass_plans',
+                'activity_direction_class_pass_segment',
+                'class_pass_segments',
+                'account_api_tokens',
+                'integration_settings',
+                'customer_remember_tokens',
+                'customer_otp_challenges',
+                'customer_auth_settings',
+                'customers',
+                'rooms',
+                'locations',
+                'class_types',
+                'activity_directions',
+                'trainers',
+                'trainer_types',
+                'account_subscriptions',
+                'account_memberships',
+                'accounts',
+                'subscription_plans',
+                'users',
+            ] as $table) {
+                DB::table($table)->truncate();
+            }
+        } finally {
+            DB::statement('SET FOREIGN_KEY_CHECKS=1');
         }
-
-        DB::statement('SET FOREIGN_KEY_CHECKS=1');
-        Storage::disk('public')->deleteDirectory('trainer-photos/charmpole');
     }
 
     /**
@@ -159,10 +188,8 @@ class DatabaseSeeder extends Seeder
             ->mapWithKeys(fn (array $room, string $slug): array => [$slug => Room::create([
                 'account_id' => $account->id,
                 'location_id' => $location->id,
-                'name' => $room['name'],
                 'slug' => $slug,
-                'capacity' => $room['capacity'],
-                'is_active' => $room['is_active'],
+                ...$room,
             ])])
             ->all();
     }
@@ -175,11 +202,8 @@ class DatabaseSeeder extends Seeder
         return collect(CharmpoleDemoCatalog::directions())
             ->mapWithKeys(fn (array $direction, string $slug): array => [$slug => ActivityDirection::create([
                 'account_id' => $account->id,
-                'name' => $direction['name'],
                 'slug' => $slug,
-                'description' => $direction['description'],
-                'color' => $direction['color'],
-                'is_active' => $direction['is_active'],
+                ...$direction,
             ])])
             ->all();
     }
@@ -196,16 +220,8 @@ class DatabaseSeeder extends Seeder
             return [$slug => ClassType::create([
                 'account_id' => $account->id,
                 'activity_direction_id' => is_string($directionSlug) ? $directions[$directionSlug]->id : null,
-                'name' => $classType['name'],
                 'slug' => $slug,
-                'description' => $classType['description'],
-                'color' => $classType['color'],
-                'schedule_kind' => $classType['schedule_kind'],
-                'default_duration_minutes' => $classType['default_duration_minutes'],
-                'booking_cutoff_minutes' => $classType['booking_cutoff_minutes'],
-                'cancellation_cutoff_minutes' => $classType['cancellation_cutoff_minutes'],
-                'default_capacity' => $classType['default_capacity'],
-                'is_active' => $classType['is_active'],
+                ...collect($classType)->except('direction_slug')->all(),
             ])];
         })->all();
     }
@@ -216,7 +232,10 @@ class DatabaseSeeder extends Seeder
     private function trainerTypes(Account $account): array
     {
         return collect(CharmpoleDemoCatalog::trainerTypes())
-            ->mapWithKeys(fn (array $trainerType, string $key): array => [$key => $account->trainerTypes()->create($trainerType)])
+            ->mapWithKeys(fn (array $trainerType, string $key): array => [$key => TrainerType::create([
+                'account_id' => $account->id,
+                ...$trainerType,
+            ])])
             ->all();
     }
 
@@ -226,74 +245,31 @@ class DatabaseSeeder extends Seeder
      */
     private function trainers(Account $account, array $trainerTypes): array
     {
-        $avatars = [
-            'Настя' => 'avatar-nastya.png',
-            'Slastya' => 'avatar-slastya.png',
-            'Катя' => 'avatar-katya.png',
-            'Ліза' => 'avatar-liza.png',
-            'Женя' => 'avatar-jenya.png',
-            'Аліна' => 'avatar-alina.png',
-            '_loco_man' => 'avatar-loco-man.png',
-        ];
-
-        return collect($avatars)->mapWithKeys(function (string $avatar, string $name) use ($account, $trainerTypes): array {
-            return [$name => Trainer::create([
+        return collect(CharmpoleDemoCatalog::trainers())
+            ->mapWithKeys(fn (array $trainer, string $name): array => [$name => Trainer::create([
                 'account_id' => $account->id,
-                'trainer_type_id' => $name === 'Настя' ? $trainerTypes['top']->id : $trainerTypes['trainer']->id,
-                'name' => $name,
-                'slug' => Str::slug($name) ?: Str::slug(str_replace('_', ' ', $name)),
+                'trainer_type_id' => $trainerTypes[$trainer['trainer_type_key']]->id,
                 'email' => null,
                 'phone' => null,
-                'bio' => 'Тренер студії Charmpole.',
-                'photo_path' => $this->storeAvatar($avatar),
-                'is_active' => true,
-            ])];
-        })->all();
-    }
-
-    private function storeAvatar(string $filename): ?string
-    {
-        $path = 'trainer-photos/charmpole/'.$filename;
-        $response = Http::timeout(10)->get('https://charmpole.dance/assets/img/'.$filename);
-
-        if (! $response->successful()) {
-            return null;
-        }
-
-        Storage::disk('public')->put($path, $response->body());
-
-        return $path;
-    }
-
-    private function customers(Account $account): void
-    {
-        collect(CharmpoleDemoCatalog::customers())->each(function (array $customer) use ($account): void {
-            Customer::create([
-                'account_id' => $account->id,
-                'name' => $customer['name'],
-                'phone' => $customer['phone'],
-                'email' => $customer['email'],
-                'password' => Hash::make('password'),
-                'default_language' => $account->default_language,
-                'email_verified_at' => now(),
-            ]);
-        });
+                ...collect($trainer)->except('trainer_type_key')->all(),
+            ])])
+            ->all();
     }
 
     /**
+     * @param  array<string, Room>  $rooms
      * @param  array<string, ClassType>  $classTypes
      * @param  array<string, Trainer>  $trainers
      */
-    private function schedule(Account $account, Location $location, Room $room, array $classTypes, array $trainers): void
+    private function schedule(Account $account, Location $location, array $rooms, array $classTypes, array $trainers): void
     {
-        $generator = app(GenerateScheduleOccurrences::class);
         $startDate = Carbon::now('Europe/Kyiv')->startOfWeek()->toDateString();
 
         foreach (CharmpoleDemoCatalog::scheduleRows() as $row) {
-            $series = ScheduleSeries::create([
+            ScheduleSeries::create([
                 'account_id' => $account->id,
                 'location_id' => $location->id,
-                'room_id' => $room->id,
+                'room_id' => $rooms[$row['room_slug']]->id,
                 'class_type_id' => $classTypes[$row['class_type_slug']]->id,
                 'trainer_id' => $trainers[$row['trainer_name']]->id,
                 'title' => null,
@@ -302,54 +278,12 @@ class DatabaseSeeder extends Seeder
                 'start_time' => $row['start_time'],
                 'start_date' => $startDate,
                 'end_date' => null,
-                'capacity' => null,
-                'duration_minutes' => null,
-                'booking_cutoff_minutes' => null,
-                'cancellation_cutoff_minutes' => 1440,
+                'capacity' => $row['capacity'],
+                'duration_minutes' => $row['duration_minutes'],
+                'booking_cutoff_minutes' => $row['booking_cutoff_minutes'],
+                'cancellation_cutoff_minutes' => $row['cancellation_cutoff_minutes'],
                 'status' => ScheduleSeriesStatus::Active->value,
             ]);
-
-            $generator->execute($series);
-        }
-    }
-
-    private function customerClassPasses(Account $account): void
-    {
-        foreach (CharmpoleDemoCatalog::customerClassPasses() as $pass) {
-            $customer = $account->customers()->where('email', $pass['customer_email'])->first();
-            $classPassPlan = $account->classPassPlans()->where('slug', $pass['plan_slug'])->first();
-
-            if (! $customer || ! $classPassPlan) {
-                continue;
-            }
-
-            $purchasedAt = now()->subDays(2);
-
-            CustomerClassPass::updateOrCreate(
-                ['code' => $pass['code']],
-                [
-                    'account_id' => $account->id,
-                    'customer_id' => $customer->id,
-                    'class_pass_plan_id' => $classPassPlan->id,
-                    'source' => 'manual',
-                    'status' => 'active',
-                    'plan_name' => $classPassPlan->name,
-                    'plan_slug' => $classPassPlan->slug,
-                    'price_cents' => $classPassPlan->price_cents,
-                    'currency' => $classPassPlan->currency,
-                    'sessions_count' => $classPassPlan->sessions_count,
-                    'validity_days' => $classPassPlan->validity_days,
-                    'total_validity_days' => $classPassPlan->total_validity_days,
-                    'reserved_sessions_count' => 0,
-                    'used_sessions_count' => 0,
-                    'purchased_at' => $purchasedAt,
-                    'opened_at' => null,
-                    'expires_at' => null,
-                    'usable_until_at' => $purchasedAt->copy()->addDays($classPassPlan->total_validity_days),
-                    'closed_at' => null,
-                    'is_active' => true,
-                ],
-            );
         }
     }
 }

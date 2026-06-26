@@ -633,40 +633,19 @@ class ClassPassPlanTest extends TestCase
         $this->seed(ClassPassPlanSeeder::class);
         $this->seed(ClassPassPlanSeeder::class);
 
-        $demoSlugs = [
-            'full-day-start',
-            'full-day-amateur',
-            'full-day-base',
-            'full-day-semi-pro',
-            'full-day-pro',
-            'morning-start',
-            'morning-amateur',
-            'morning-base',
-            'morning-semi-pro',
-            'morning-pro',
-            'trial-class',
-            'private-top-60',
-            'private-top-90',
-            'private-standard-60',
-            'private-standard-90',
-            'big-hall-rental-60',
-            'big-hall-rental-90',
-            'big-hall-rental-120',
-            'small-hall-rental-60',
-            'small-hall-rental-90',
-            'small-hall-rental-120',
-        ];
+        $demoSlugs = array_keys(CharmpoleDemoCatalog::classPassPlans());
 
         $query = ClassPassPlan::whereBelongsTo($account)->whereIn('slug', $demoSlugs);
 
-        $this->assertSame(21, (clone $query)->count());
-        $this->assertSame(21, (clone $query)->distinct('slug')->count('slug'));
-        $this->assertSame(11, (clone $query)->where('schedule_kind', 'group_class')->count());
+        $this->assertSame(23, count($demoSlugs));
+        $this->assertSame(23, (clone $query)->count());
+        $this->assertSame(23, (clone $query)->distinct('slug')->count('slug'));
+        $this->assertSame(13, (clone $query)->where('schedule_kind', 'group_class')->count());
         $this->assertSame(4, (clone $query)->where('schedule_kind', 'private_lesson')->count());
         $this->assertSame(6, (clone $query)->where('schedule_kind', 'room_rental')->count());
-        $this->assertSame(21, (clone $query)->where('total_validity_days', 180)->count());
+        $this->assertSame(23, (clone $query)->where('total_validity_days', 180)->count());
 
-        $this->assertSame(2, $account->classPassSegments()->whereIn('slug', array_keys(CharmpoleDemoCatalog::classPassSegments()))->count());
+        $this->assertSame(5, $account->classPassSegments()->whereIn('slug', array_keys(CharmpoleDemoCatalog::classPassSegments()))->count());
         $this->assertTrue($account->classPassSegments()
             ->where('slug', 'dytyachi-abonementy')
             ->firstOrFail()
@@ -676,8 +655,8 @@ class ClassPassPlanTest extends TestCase
 
         $morningSegment = $account->classPassSegments()->where('slug', 'rankovi-abonementy')->firstOrFail();
 
-        $this->assertSame(5, (clone $query)->where('name', 'like', '%ранок%')->whereBelongsTo($morningSegment, 'classPassSegment')->count());
-        $this->assertNull((clone $query)->where('slug', 'full-day-start')->firstOrFail()->class_pass_segment_id);
+        $this->assertSame(6, (clone $query)->where('name', 'like', '%ранок%')->whereBelongsTo($morningSegment, 'classPassSegment')->count());
+        $this->assertSame('povnyy-den', (clone $query)->where('slug', 'full-day-start')->firstOrFail()->classPassSegment->slug);
     }
 
     /**

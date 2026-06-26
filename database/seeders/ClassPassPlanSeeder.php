@@ -26,14 +26,11 @@ class ClassPassPlanSeeder extends Seeder
             return;
         }
 
+        $locationData = CharmpoleDemoCatalog::location();
+
         $location = $account->locations()->firstOrCreate(
-            ['slug' => 'charmpole'],
-            [
-                'name' => 'Charmpole',
-                'address' => 'Київ, проспект Берестейський (Перемоги), 56',
-                'timezone' => 'Europe/Kyiv',
-                'is_active' => true,
-            ],
+            ['slug' => $locationData['slug']],
+            Arr::except($locationData, ['slug']),
         );
 
         $directions = $this->directions($account);
@@ -138,6 +135,7 @@ class ClassPassPlanSeeder extends Seeder
                 ],
                 [
                     'name' => $room['name'],
+                    'description' => $room['description'],
                     'capacity' => $room['capacity'],
                     'is_active' => $room['is_active'],
                 ],
