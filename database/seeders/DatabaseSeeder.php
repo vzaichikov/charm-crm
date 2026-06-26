@@ -128,6 +128,8 @@ class DatabaseSeeder extends Seeder
             'class_pass_plan_trainer_type',
             'class_pass_plan_activity_direction',
             'class_pass_plans',
+            'activity_direction_class_pass_segment',
+            'class_pass_segments',
             'rooms',
             'locations',
             'class_types',

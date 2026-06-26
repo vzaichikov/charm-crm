@@ -5,6 +5,7 @@ namespace Database\Seeders;
 use App\Models\Account;
 use App\Models\ActivityDirection;
 use App\Models\ClassPassPlan;
+use App\Models\ClassPassSegment;
 use App\Models\ClassType;
 use App\Models\Location;
 use App\Models\Room;
@@ -36,6 +37,7 @@ class ClassPassPlanSeeder extends Seeder
         );
 
         $directions = $this->directions($account);
+        $classPassSegments = $this->classPassSegments($account, $directions);
         $rooms = $this->rooms($account, $location);
         $classTypes = $this->classTypes($account, $directions);
         $trainerTypes = $this->trainerTypes($account);
@@ -63,6 +65,9 @@ class ClassPassPlanSeeder extends Seeder
                     'sort_order',
                 ]) + [
                     'currency' => $account->default_currency,
+                    'class_pass_segment_id' => is_string($plan['class_pass_segment_slug'])
+                        ? $classPassSegments[$plan['class_pass_segment_slug']]->id
+                        : null,
                 ],
             );
 
@@ -88,6 +93,35 @@ class ClassPassPlanSeeder extends Seeder
                     'is_active' => $direction['is_active'],
                 ],
             )])
+            ->all();
+    }
+
+    /**
+     * @param  array<string, ActivityDirection>  $directions
+     * @return array<string, ClassPassSegment>
+     */
+    private function classPassSegments(Account $account, array $directions): array
+    {
+        return collect(CharmpoleDemoCatalog::classPassSegments())
+            ->mapWithKeys(function (array $segment, string $slug) use ($account, $directions): array {
+                $classPassSegment = $account->classPassSegments()->updateOrCreate(
+                    ['slug' => $slug],
+                    Arr::only($segment, [
+                        'name',
+                        'schedule_kind',
+                        'sort_order',
+                        'is_active',
+                    ]),
+                );
+
+                $classPassSegment->activityDirections()->sync(
+                    collect($segment['direction_slugs'])
+                        ->map(fn (string $directionSlug): int => $directions[$directionSlug]->id)
+                        ->all(),
+                );
+
+                return [$slug => $classPassSegment];
+            })
             ->all();
     }
 

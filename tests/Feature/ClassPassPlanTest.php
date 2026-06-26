@@ -6,6 +6,7 @@ use App\Enums\AccountRole;
 use App\Models\Account;
 use App\Models\ActivityDirection;
 use App\Models\ClassPassPlan;
+use App\Models\ClassPassSegment;
 use App\Models\ClassType;
 use App\Models\Location;
 use App\Models\Room;
@@ -13,6 +14,7 @@ use App\Models\ScheduledClass;
 use App\Models\Trainer;
 use App\Models\TrainerType;
 use App\Models\User;
+use App\Support\CharmpoleDemoCatalog;
 use Database\Seeders\ClassPassPlanSeeder;
 use Illuminate\Foundation\Testing\DatabaseTransactions;
 use Illuminate\Support\Carbon;
@@ -268,6 +270,107 @@ class ClassPassPlanTest extends TestCase
             ->assertSee('Rental pass')
             ->assertDontSee('Group pass')
             ->assertDontSee('Private pass');
+    }
+
+    public function test_class_pass_plan_index_segment_filters_split_plans_inside_schedule_kind(): void
+    {
+        $owner = User::factory()->create();
+        $account = Account::factory()->create(['default_currency' => 'UAH']);
+        $account->addOwner($owner);
+        $kidsSegment = ClassPassSegment::factory()->for($account)->create([
+            'name' => 'Kids passes',
+            'schedule_kind' => 'group_class',
+            'sort_order' => 10,
+        ]);
+        $morningSegment = ClassPassSegment::factory()->for($account)->create([
+            'name' => 'Morning passes',
+            'schedule_kind' => 'group_class',
+            'sort_order' => 20,
+        ]);
+
+        $unsegmentedPlan = ClassPassPlan::factory()->for($account)->create([
+            'name' => 'Full day',
+            'schedule_kind' => 'group_class',
+            'class_pass_segment_id' => null,
+        ]);
+        $kidsPlan = ClassPassPlan::factory()->for($account)->for($kidsSegment)->create([
+            'name' => 'Kids plan',
+            'schedule_kind' => 'group_class',
+        ]);
+        $morningPlan = ClassPassPlan::factory()->for($account)->for($morningSegment)->create([
+            'name' => 'Morning plan',
+            'schedule_kind' => 'group_class',
+        ]);
+
+        $this->actingAs($owner)
+            ->get(route('dashboard.accounts.class-pass-plans.index', $account))
+            ->assertOk()
+            ->assertSee(__('app.all_class_pass_segments'))
+            ->assertSee(__('app.without_class_pass_segment'))
+            ->assertSee('Kids passes')
+            ->assertSee($unsegmentedPlan->name)
+            ->assertSee($kidsPlan->name)
+            ->assertSee($morningPlan->name);
+
+        $this->actingAs($owner)
+            ->get(route('dashboard.accounts.class-pass-plans.index', [$account, 'tab' => 'group_class', 'segment' => 'none']))
+            ->assertOk()
+            ->assertSee($unsegmentedPlan->name)
+            ->assertDontSee($kidsPlan->name)
+            ->assertDontSee($morningPlan->name);
+
+        $this->actingAs($owner)
+            ->get(route('dashboard.accounts.class-pass-plans.index', [$account, 'tab' => 'group_class', 'segment' => $kidsSegment->id]))
+            ->assertOk()
+            ->assertSee($kidsPlan->name)
+            ->assertDontSee($unsegmentedPlan->name)
+            ->assertDontSee($morningPlan->name);
+    }
+
+    public function test_class_pass_plan_segment_must_match_schedule_kind_and_directions(): void
+    {
+        $owner = User::factory()->create();
+        $account = Account::factory()->create(['default_currency' => 'UAH']);
+        $account->addOwner($owner);
+        $kidsDirection = ActivityDirection::factory()->for($account)->create(['name' => 'Kids', 'slug' => 'kids']);
+        $poleDirection = ActivityDirection::factory()->for($account)->create(['name' => 'Pole', 'slug' => 'pole']);
+        $kidsClassType = $this->classTypeForDirection($kidsDirection);
+        $poleClassType = $this->classTypeForDirection($poleDirection);
+        $kidsSegment = ClassPassSegment::factory()->for($account)->create([
+            'schedule_kind' => 'group_class',
+        ]);
+        $kidsSegment->activityDirections()->sync([$kidsDirection->id]);
+        $privateSegment = ClassPassSegment::factory()->for($account)->create([
+            'schedule_kind' => 'private_lesson',
+        ]);
+
+        $this->actingAs($owner)
+            ->post(route('dashboard.accounts.class-pass-plans.store', $account), $this->validPayload($kidsDirection, [
+                'class_pass_segment_id' => $kidsSegment->id,
+                'class_type_ids' => [$kidsClassType->id],
+            ]))
+            ->assertRedirect(route('dashboard.accounts.class-pass-plans.index', [$account, 'tab' => 'group_class', 'segment' => $kidsSegment->id]));
+
+        $classPassPlan = ClassPassPlan::whereBelongsTo($account)->where('slug', 'start')->firstOrFail();
+
+        $this->assertTrue($kidsSegment->is($classPassPlan->classPassSegment()->first()));
+        $this->assertSame($kidsSegment->id, $classPassPlan->class_pass_segment_id);
+
+        $this->actingAs($owner)
+            ->post(route('dashboard.accounts.class-pass-plans.store', $account), $this->validPayload($kidsDirection, [
+                'slug' => 'invalid-direction',
+                'class_pass_segment_id' => $kidsSegment->id,
+                'class_type_ids' => [$poleClassType->id],
+            ]))
+            ->assertSessionHasErrors('class_type_ids');
+
+        $this->actingAs($owner)
+            ->post(route('dashboard.accounts.class-pass-plans.store', $account), $this->validPayload($kidsDirection, [
+                'slug' => 'invalid-format',
+                'class_pass_segment_id' => $privateSegment->id,
+                'class_type_ids' => [$kidsClassType->id],
+            ]))
+            ->assertSessionHasErrors('class_pass_segment_id');
     }
 
     public function test_group_class_pass_plan_can_use_multiple_matching_class_types(): void
@@ -562,6 +665,19 @@ class ClassPassPlanTest extends TestCase
         $this->assertSame(4, (clone $query)->where('schedule_kind', 'private_lesson')->count());
         $this->assertSame(6, (clone $query)->where('schedule_kind', 'room_rental')->count());
         $this->assertSame(21, (clone $query)->where('total_validity_days', 180)->count());
+
+        $this->assertSame(2, $account->classPassSegments()->whereIn('slug', array_keys(CharmpoleDemoCatalog::classPassSegments()))->count());
+        $this->assertTrue($account->classPassSegments()
+            ->where('slug', 'dytyachi-abonementy')
+            ->firstOrFail()
+            ->activityDirections()
+            ->where('slug', 'kids')
+            ->exists());
+
+        $morningSegment = $account->classPassSegments()->where('slug', 'rankovi-abonementy')->firstOrFail();
+
+        $this->assertSame(5, (clone $query)->where('name', 'like', '%ранок%')->whereBelongsTo($morningSegment, 'classPassSegment')->count());
+        $this->assertNull((clone $query)->where('slug', 'full-day-start')->firstOrFail()->class_pass_segment_id);
     }
 
     /**

@@ -144,11 +144,11 @@ class CharmpoleDemoCatalog
             'full-day-base' => self::plan(ScheduleKind::GroupClass, 'BASE повний день', 'full-day-base', 'Повний абонемент на 8 занять.', 250000, 8, null, 30, false, $groupClassTypes, $groupTrainerTypes),
             'full-day-semi-pro' => self::plan(ScheduleKind::GroupClass, 'Semi pro повний день', 'full-day-semi-pro', 'Повний абонемент на 12 занять.', 350000, 12, null, 40, false, $groupClassTypes, $groupTrainerTypes),
             'full-day-pro' => self::plan(ScheduleKind::GroupClass, 'Pro повний день', 'full-day-pro', 'Повний абонемент на 16 занять.', 440000, 16, null, 50, false, $groupClassTypes, $groupTrainerTypes),
-            'morning-start' => self::plan(ScheduleKind::GroupClass, 'START ранок', 'morning-start', 'Ранковий абонемент на 4 заняття до 12:00.', 140000, 4, '12:00', 60, false, $groupClassTypes, $groupTrainerTypes),
-            'morning-amateur' => self::plan(ScheduleKind::GroupClass, 'AMATEUR ранок', 'morning-amateur', 'Ранковий абонемент на 6 занять до 12:00.', 190000, 6, '12:00', 70, false, $groupClassTypes, $groupTrainerTypes),
-            'morning-base' => self::plan(ScheduleKind::GroupClass, 'BASE ранок', 'morning-base', 'Ранковий абонемент на 8 занять до 12:00.', 240000, 8, '12:00', 80, false, $groupClassTypes, $groupTrainerTypes),
-            'morning-semi-pro' => self::plan(ScheduleKind::GroupClass, 'Semi pro ранок', 'morning-semi-pro', 'Ранковий абонемент на 12 занять до 12:00.', 310000, 12, '12:00', 90, false, $groupClassTypes, $groupTrainerTypes),
-            'morning-pro' => self::plan(ScheduleKind::GroupClass, 'Pro ранок', 'morning-pro', 'Ранковий абонемент на 16 занять до 12:00.', 390000, 16, '12:00', 100, false, $groupClassTypes, $groupTrainerTypes),
+            'morning-start' => self::plan(ScheduleKind::GroupClass, 'START ранок', 'morning-start', 'Ранковий абонемент на 4 заняття до 12:00.', 140000, 4, '12:00', 60, false, $groupClassTypes, $groupTrainerTypes, [], 'rankovi-abonementy'),
+            'morning-amateur' => self::plan(ScheduleKind::GroupClass, 'AMATEUR ранок', 'morning-amateur', 'Ранковий абонемент на 6 занять до 12:00.', 190000, 6, '12:00', 70, false, $groupClassTypes, $groupTrainerTypes, [], 'rankovi-abonementy'),
+            'morning-base' => self::plan(ScheduleKind::GroupClass, 'BASE ранок', 'morning-base', 'Ранковий абонемент на 8 занять до 12:00.', 240000, 8, '12:00', 80, false, $groupClassTypes, $groupTrainerTypes, [], 'rankovi-abonementy'),
+            'morning-semi-pro' => self::plan(ScheduleKind::GroupClass, 'Semi pro ранок', 'morning-semi-pro', 'Ранковий абонемент на 12 занять до 12:00.', 310000, 12, '12:00', 90, false, $groupClassTypes, $groupTrainerTypes, [], 'rankovi-abonementy'),
+            'morning-pro' => self::plan(ScheduleKind::GroupClass, 'Pro ранок', 'morning-pro', 'Ранковий абонемент на 16 занять до 12:00.', 390000, 16, '12:00', 100, false, $groupClassTypes, $groupTrainerTypes, [], 'rankovi-abonementy'),
             'private-top-60' => self::plan(ScheduleKind::PrivateLesson, 'TOP-1', 'private-top-60', '1 год. з ТОП-тренером для 1 людини.', 110000, 1, null, 200, false, ['individualne-60-xv'], ['top']),
             'private-top-90' => self::plan(ScheduleKind::PrivateLesson, 'TOP-1.5', 'private-top-90', '1.5 год. з ТОП-тренером для 1 людини.', 160000, 1, null, 210, false, ['individualne-90-xv'], ['top']),
             'private-standard-60' => self::plan(ScheduleKind::PrivateLesson, 'STANDART-1', 'private-standard-60', '1 год. з тренером для 1 людини.', 100000, 1, null, 220, false, ['individualne-60-xv'], ['trainer']),
@@ -159,6 +159,17 @@ class CharmpoleDemoCatalog
             'small-hall-rental-60' => self::plan(ScheduleKind::RoomRental, 'Малий зал 1г', 'small-hall-rental-60', 'Оренда малого залу на 1 годину.', 40000, 1, null, 330, false, ['orenda-60-xv'], [], ['small-hall']),
             'small-hall-rental-90' => self::plan(ScheduleKind::RoomRental, 'Малий зал 1.5г', 'small-hall-rental-90', 'Оренда малого залу на 1.5 години.', 60000, 1, null, 340, false, ['orenda-90-xv'], [], ['small-hall']),
             'small-hall-rental-120' => self::plan(ScheduleKind::RoomRental, 'Малий зал 2г', 'small-hall-rental-120', 'Оренда малого залу на 2 години.', 70000, 1, null, 350, false, ['orenda-120-xv'], [], ['small-hall']),
+        ];
+    }
+
+    /**
+     * @return array<string, array<string, mixed>>
+     */
+    public static function classPassSegments(): array
+    {
+        return [
+            'dytyachi-abonementy' => self::classPassSegment('Дитячі абонементи', 'dytyachi-abonementy', ScheduleKind::GroupClass, 10, ['kids']),
+            'rankovi-abonementy' => self::classPassSegment('Ранкові абонементи', 'rankovi-abonementy', ScheduleKind::GroupClass, 20),
         ];
     }
 
@@ -293,6 +304,7 @@ class CharmpoleDemoCatalog
         array $classTypeSlugs,
         array $trainerTypeKeys,
         array $roomSlugs = [],
+        ?string $classPassSegmentSlug = null,
     ): array {
         return [
             'name' => $name,
@@ -313,6 +325,28 @@ class CharmpoleDemoCatalog
             'class_type_slugs' => $classTypeSlugs,
             'trainer_type_keys' => $trainerTypeKeys,
             'room_slugs' => $roomSlugs,
+            'class_pass_segment_slug' => $classPassSegmentSlug,
+        ];
+    }
+
+    /**
+     * @param  array<int, string>  $directionSlugs
+     * @return array<string, mixed>
+     */
+    private static function classPassSegment(
+        string $name,
+        string $slug,
+        ScheduleKind $scheduleKind,
+        int $sortOrder,
+        array $directionSlugs = [],
+    ): array {
+        return [
+            'name' => $name,
+            'slug' => $slug,
+            'schedule_kind' => $scheduleKind->value,
+            'sort_order' => $sortOrder,
+            'is_active' => true,
+            'direction_slugs' => $directionSlugs,
         ];
     }
 }
