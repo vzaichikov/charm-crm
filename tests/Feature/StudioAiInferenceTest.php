@@ -74,6 +74,7 @@ class StudioAiInferenceTest extends TestCase
             return $request->url() === 'https://ollama.com/api/chat'
                 && $payload['model'] === 'gemma3:27b-cloud'
                 && $payload['stream'] === false
+                && str_contains($payload['messages'][0]['content'], 'Markdown-style bullets or numbered list items on separate lines')
                 && str_contains($payload['messages'][1]['content'], 'Studio context JSON')
                 && str_contains($payload['messages'][1]['content'], 'Help context JSON')
                 && str_contains($payload['messages'][1]['content'], 'customers_total')
