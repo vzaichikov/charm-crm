@@ -136,6 +136,8 @@ class DatabaseSeeder extends Seeder
         DB::statement('SET FOREIGN_KEY_CHECKS=0');
 
         try {
+            $clearMethod = app()->runningUnitTests() ? 'delete' : 'truncate';
+
             foreach ([
                 'scheduled_class_cancellation_effects',
                 'scheduled_class_cancellations',
@@ -172,7 +174,8 @@ class DatabaseSeeder extends Seeder
                 'subscription_plans',
                 'users',
             ] as $table) {
-                DB::table($table)->truncate();
+                // MySQL TRUNCATE commits implicitly, so PHPUnit transactions cannot roll it back.
+                DB::table($table)->{$clearMethod}();
             }
         } finally {
             DB::statement('SET FOREIGN_KEY_CHECKS=1');

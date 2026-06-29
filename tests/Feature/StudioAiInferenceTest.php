@@ -4,16 +4,25 @@ namespace Tests\Feature;
 
 use App\Enums\AiConversationMessageRole;
 use App\Enums\AiProvider;
+use App\Enums\ClassBookingStatus;
+use App\Enums\ScheduleKind;
 use App\Enums\TelegramBotProfile;
 use App\Models\Account;
 use App\Models\AiConversation;
+use App\Models\ClassBooking;
+use App\Models\ClassType;
+use App\Models\Customer;
+use App\Models\Location;
 use App\Models\PlatformAiProviderCredential;
 use App\Models\PlatformAiSetting;
+use App\Models\ScheduledClass;
 use App\Models\TelegramChatAuthorization;
+use App\Models\Trainer;
 use App\Models\User;
 use App\Support\Ai\StudioAiInference;
 use Illuminate\Foundation\Testing\DatabaseTransactions;
 use Illuminate\Http\Client\Request;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Http;
 use Tests\TestCase;
 
@@ -136,6 +145,67 @@ class StudioAiInferenceTest extends TestCase
                 && str_contains($request->data()['messages'][1]['content'], 'Привіт, хто ти і що вмієш?');
         });
         Http::assertSentCount(2);
+    }
+
+    public function test_inference_context_includes_tomorrow_class_booking_details(): void
+    {
+        Carbon::setTestNow(Carbon::parse('2026-06-29 09:00:00', 'Europe/Kyiv'));
+
+        Http::fake([
+            'ollama.com/api/chat' => Http::sequence()
+                ->push([
+                    'message' => [
+                        'role' => 'assistant',
+                        'content' => '{"in_scope":true,"reason":"studio booking details question"}',
+                    ],
+                ])
+                ->push([
+                    'message' => [
+                        'role' => 'assistant',
+                        'content' => 'Tomorrow details are available.',
+                    ],
+                ]),
+        ]);
+
+        $account = $this->accountWithOllamaSettings();
+        $location = Location::factory()->for($account)->create(['name' => 'Podil']);
+        $trainer = Trainer::factory()->for($account)->create(['name' => 'Marta']);
+        $classType = ClassType::factory()->for($account)->create([
+            'name' => 'Pole Beginner',
+            'schedule_kind' => ScheduleKind::GroupClass->value,
+        ]);
+        $scheduledClass = ScheduledClass::factory()
+            ->for($account)
+            ->for($location)
+            ->for($trainer)
+            ->for($classType)
+            ->create([
+                'title' => 'Pole Beginner',
+                'starts_at' => Carbon::parse('2026-06-30 10:00:00', 'Europe/Kyiv')->timezone('UTC'),
+                'ends_at' => Carbon::parse('2026-06-30 11:00:00', 'Europe/Kyiv')->timezone('UTC'),
+            ]);
+        $customer = Customer::factory()->for($account)->create(['name' => 'Anna Client']);
+        ClassBooking::factory()
+            ->for($account)
+            ->for($scheduledClass)
+            ->for($customer, 'customer')
+            ->create(['status' => ClassBookingStatus::Booked->value]);
+
+        app(StudioAiInference::class)->respond($account, 'Можеш трохи подробнее. Які тренери, хто на скільки записаний?');
+
+        Http::assertSent(function (Request $request) use ($scheduledClass): bool {
+            $payload = $request->data();
+            $content = $payload['messages'][1]['content'] ?? '';
+
+            return str_contains($content, 'class_booking_details')
+                && str_contains($content, 'tomorrow')
+                && str_contains($content, (string) $scheduledClass->id)
+                && str_contains($content, 'Marta')
+                && str_contains($content, 'Anna Client');
+        });
+        Http::assertSentCount(2);
+
+        Carbon::setTestNow();
     }
 
     public function test_prompt_injection_request_is_rejected_before_answer_request(): void
