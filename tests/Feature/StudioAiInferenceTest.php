@@ -75,11 +75,84 @@ class StudioAiInferenceTest extends TestCase
                 && $payload['model'] === 'gemma3:27b-cloud'
                 && $payload['stream'] === false
                 && str_contains($payload['messages'][1]['content'], 'Studio context JSON')
+                && str_contains($payload['messages'][1]['content'], 'Help context JSON')
                 && str_contains($payload['messages'][1]['content'], 'customers_total')
                 && str_contains($payload['messages'][1]['content'], 'next_7_days')
                 && str_contains($payload['messages'][1]['content'], 'How many classes today?');
         });
 
+        Http::assertSentCount(2);
+    }
+
+    public function test_inference_includes_owner_help_context_for_customer_how_to_questions(): void
+    {
+        Http::fake([
+            'ollama.com/api/chat' => Http::sequence()
+                ->push([
+                    'message' => [
+                        'role' => 'assistant',
+                        'content' => '{"in_scope":true,"reason":"Ladna customer workflow question"}',
+                    ],
+                ])
+                ->push([
+                    'message' => [
+                        'role' => 'assistant',
+                        'content' => '{"answer":"Відкрийте Клієнти й натисніть Додати клієнта.","follow_up_actions":[]}',
+                    ],
+                ]),
+        ]);
+
+        $account = $this->accountWithOllamaSettings();
+
+        $result = app(StudioAiInference::class)->respond($account, 'А розкажи мені, як додати клієнта?');
+
+        $this->assertTrue($result->usedAi);
+        $this->assertSame('Відкрийте Клієнти й натисніть Додати клієнта.', $result->text);
+        $this->assertSame('customers-bookings', $result->helpSources[0]['slug']);
+
+        Http::assertSent(function (Request $request): bool {
+            $content = $request->data()['messages'][1]['content'] ?? '';
+
+            return str_contains($content, 'Help context JSON')
+                && str_contains($content, 'customers-bookings')
+                && str_contains($content, 'Як додати клієнта вручну')
+                && str_contains($content, 'Натисніть Додати клієнта.');
+        });
+        Http::assertSentCount(2);
+    }
+
+    public function test_inference_includes_class_pass_help_context_for_no_pass_questions(): void
+    {
+        Http::fake([
+            'ollama.com/api/chat' => Http::sequence()
+                ->push([
+                    'message' => [
+                        'role' => 'assistant',
+                        'content' => '{"in_scope":true,"reason":"class pass workflow question"}',
+                    ],
+                ])
+                ->push([
+                    'message' => [
+                        'role' => 'assistant',
+                        'content' => '{"answer":"Перевірте активні абонементи клієнта і записи без резерву.","follow_up_actions":[]}',
+                    ],
+                ]),
+        ]);
+
+        $account = $this->accountWithOllamaSettings();
+
+        $result = app(StudioAiInference::class)->respond($account, 'Що робити, якщо клієнт без абонемента?');
+
+        $this->assertTrue($result->usedAi);
+        $this->assertTrue(collect($result->helpSources)->contains(fn (array $source): bool => $source['slug'] === 'passes-prices'));
+
+        Http::assertSent(function (Request $request): bool {
+            $content = $request->data()['messages'][1]['content'] ?? '';
+
+            return str_contains($content, 'Help context JSON')
+                && str_contains($content, 'Чому запис може бути без абонемента')
+                && str_contains($content, 'запис без резерву');
+        });
         Http::assertSentCount(2);
     }
 
@@ -110,6 +183,9 @@ class StudioAiInferenceTest extends TestCase
         });
         Http::assertNotSent(function (Request $request): bool {
             return str_contains($request->data()['messages'][1]['content'] ?? '', 'Studio context JSON');
+        });
+        Http::assertNotSent(function (Request $request): bool {
+            return str_contains($request->data()['messages'][1]['content'] ?? '', 'Help context JSON');
         });
         Http::assertSentCount(1);
     }
