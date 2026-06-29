@@ -3,20 +3,30 @@
 namespace Tests\Feature;
 
 use App\Enums\AiProvider;
+use App\Enums\ScheduleKind;
 use App\Enums\TelegramBotProfile;
 use App\Models\Account;
 use App\Models\AiConversationMessage;
+use App\Models\AiPendingAction;
+use App\Models\ClassBooking;
+use App\Models\ClassType;
+use App\Models\Customer;
+use App\Models\Location;
 use App\Models\PlatformAiProviderCredential;
 use App\Models\PlatformAiSetting;
+use App\Models\Room;
+use App\Models\ScheduledClass;
 use App\Models\TelegramAuthorizationSelectionCandidate;
 use App\Models\TelegramBotInstallation;
 use App\Models\TelegramChatAuthorization;
 use App\Models\TelegramMessage;
+use App\Models\Trainer;
 use App\Models\User;
 use Illuminate\Foundation\Testing\DatabaseTransactions;
 use Illuminate\Http\Client\Request;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Str;
 use Tests\TestCase;
 
@@ -151,6 +161,41 @@ class TelegramWebhookTest extends TestCase
         $this->assertSame(__('app.telegram_share_phone_button'), data_get($message->payload, 'reply_markup.keyboard.0.0.text'));
     }
 
+    public function test_owner_bot_authorization_adds_quick_action_keyboard_when_assistant_is_enabled(): void
+    {
+        Http::fake(['api.telegram.org/*' => Http::response(['ok' => true])]);
+
+        PlatformAiSetting::query()->delete();
+        PlatformAiSetting::factory()->create(['owner_ai_assistant_enabled' => true]);
+
+        $owner = User::factory()->create(['phone' => '+380671112233']);
+        $account = Account::factory()->create(['country_code' => 'UA']);
+        $account->addOwner($owner);
+        [$installation, $webhookKey] = $this->ownerInstallation();
+
+        $this->postJson(route('api.v1.telegram.webhooks.handle', $webhookKey), [
+            'update_id' => 1011,
+            'message' => [
+                'message_id' => 18,
+                'chat' => ['id' => 562],
+                'from' => ['id' => 782, 'username' => 'owner'],
+                'contact' => [
+                    'user_id' => 782,
+                    'phone_number' => '+380671112233',
+                ],
+            ],
+        ], [
+            'X-Telegram-Bot-Api-Secret-Token' => $installation->webhookSecret(),
+        ])->assertNoContent();
+
+        Http::assertSent(fn (Request $request): bool => str_ends_with($request->url(), '/sendMessage')
+            && $request['chat_id'] === '562'
+            && $request['text'] === __('app.telegram_authorized')
+            && data_get($request->data(), 'reply_markup.keyboard.0.0.text') === __('app.telegram_quick_action_create_booking')
+            && data_get($request->data(), 'reply_markup.resize_keyboard') === true
+            && data_get($request->data(), 'reply_markup.is_persistent') === true);
+    }
+
     public function test_owner_bot_multi_studio_phone_uses_callback_selection(): void
     {
         Http::fake(['api.telegram.org/*' => Http::response(['ok' => true])]);
@@ -254,6 +299,60 @@ class TelegramWebhookTest extends TestCase
         Carbon::setTestNow();
     }
 
+    public function test_owner_quick_action_starts_booking_dialog_without_ai_request(): void
+    {
+        Carbon::setTestNow(Carbon::parse('2026-06-28 09:00:00', 'UTC'));
+        Http::fake(['api.telegram.org/*' => Http::response(['ok' => true])]);
+
+        $owner = User::factory()->create(['phone' => '+380671112233']);
+        $account = Account::factory()->create(['country_code' => 'UA']);
+        $account->addOwner($owner);
+        PlatformAiSetting::query()->delete();
+        PlatformAiSetting::factory()->create([
+            'owner_ai_assistant_enabled' => true,
+            'active_provider' => null,
+            'active_model' => null,
+        ]);
+        [$installation, $webhookKey] = $this->ownerInstallation();
+
+        TelegramChatAuthorization::factory()->for($account)->create([
+            'telegram_bot_installation_id' => $installation->id,
+            'user_id' => $owner->id,
+            'profile' => TelegramBotProfile::Owner->value,
+            'telegram_chat_id' => '563',
+            'telegram_user_id' => '783',
+        ]);
+
+        $this->postJson(route('api.v1.telegram.webhooks.handle', $webhookKey), [
+            'update_id' => 1012,
+            'message' => [
+                'message_id' => 19,
+                'chat' => ['id' => 563],
+                'from' => ['id' => 783, 'username' => 'owner'],
+                'text' => __('app.telegram_quick_action_create_booking'),
+            ],
+        ], [
+            'X-Telegram-Bot-Api-Secret-Token' => $installation->webhookSecret(),
+        ])->assertNoContent();
+
+        $this->assertDatabaseHas('telegram_messages', [
+            'telegram_chat_id' => '563',
+            'direction' => 'outbound',
+            'text' => __('app.assistant_booking_dialog_customer_missing'),
+        ]);
+
+        $assistantMessage = AiConversationMessage::where('content', __('app.assistant_booking_dialog_customer_missing'))->firstOrFail();
+
+        $this->assertSame('awaiting_customer', data_get($assistantMessage->metadata, 'booking_dialog.status'));
+        Http::assertNotSent(fn (Request $request): bool => str_ends_with($request->url(), '/sendChatAction'));
+        Http::assertSent(fn (Request $request): bool => str_ends_with($request->url(), '/sendMessage')
+            && $request['chat_id'] === '563'
+            && $request['parse_mode'] === 'HTML'
+            && data_get($request->data(), 'reply_markup.keyboard.0.0.text') === __('app.telegram_quick_action_create_booking'));
+
+        Carbon::setTestNow();
+    }
+
     public function test_authorized_owner_text_uses_ai_when_ollama_provider_is_configured(): void
     {
         Carbon::setTestNow(Carbon::parse('2026-06-28 09:00:00', 'UTC'));
@@ -332,6 +431,206 @@ class TelegramWebhookTest extends TestCase
             && $request['chat_id'] === '558'
             && $request['parse_mode'] === 'HTML'
             && $request['text'] === "<b>AI answer</b> for studio schedule.\n&#8226; First item");
+
+        Carbon::setTestNow();
+    }
+
+    public function test_owner_ai_follow_up_actions_are_sent_as_inline_buttons_and_callbacks(): void
+    {
+        Carbon::setTestNow(Carbon::parse('2026-06-28 09:00:00', 'UTC'));
+        Http::fake([
+            'ollama.com/api/chat' => Http::sequence()
+                ->push([
+                    'message' => [
+                        'role' => 'assistant',
+                        'content' => '{"in_scope":true,"reason":"studio schedule question"}',
+                    ],
+                ])
+                ->push([
+                    'message' => [
+                        'role' => 'assistant',
+                        'content' => json_encode([
+                            'answer' => 'Choose a next step.',
+                            'follow_up_actions' => [
+                                'How many classes today?',
+                                'Show studio profile',
+                            ],
+                        ]),
+                    ],
+                ]),
+            'api.telegram.org/*' => Http::response(['ok' => true]),
+        ]);
+
+        $owner = User::factory()->create(['phone' => '+380671112233']);
+        $account = Account::factory()->create(['country_code' => 'UA']);
+        $account->addOwner($owner);
+        PlatformAiSetting::query()->delete();
+        PlatformAiProviderCredential::query()->delete();
+        PlatformAiSetting::factory()->create([
+            'owner_ai_assistant_enabled' => true,
+            'active_provider' => AiProvider::OllamaCloud->value,
+            'active_model' => 'gemma3:27b-cloud',
+        ]);
+        PlatformAiProviderCredential::factory()->create([
+            'provider' => AiProvider::OllamaCloud->value,
+            'model' => 'gemma3:27b-cloud',
+            'credentials' => ['api_key' => 'test-ollama-key'],
+            'is_configured' => true,
+        ]);
+        [$installation, $webhookKey] = $this->ownerInstallation();
+
+        TelegramChatAuthorization::factory()->for($account)->create([
+            'telegram_bot_installation_id' => $installation->id,
+            'user_id' => $owner->id,
+            'profile' => TelegramBotProfile::Owner->value,
+            'telegram_chat_id' => '564',
+            'telegram_user_id' => '784',
+        ]);
+
+        $this->postJson(route('api.v1.telegram.webhooks.handle', $webhookKey), [
+            'update_id' => 1013,
+            'message' => [
+                'message_id' => 20,
+                'chat' => ['id' => 564],
+                'from' => ['id' => 784, 'username' => 'owner'],
+                'text' => 'What should I check next?',
+            ],
+        ], [
+            'X-Telegram-Bot-Api-Secret-Token' => $installation->webhookSecret(),
+        ])->assertNoContent();
+
+        $assistantMessage = AiConversationMessage::where('content', 'Choose a next step.')->firstOrFail();
+
+        Http::assertSent(fn (Request $request): bool => str_ends_with($request->url(), '/sendMessage')
+            && $request['chat_id'] === '564'
+            && $request['text'] === 'Choose a next step.'
+            && data_get($request->data(), 'reply_markup.inline_keyboard.0.0.text') === 'How many classes today?'
+            && data_get($request->data(), 'reply_markup.inline_keyboard.0.0.callback_data') === 'tg_follow:'.$assistantMessage->id.':0');
+
+        PlatformAiSetting::query()->firstOrFail()->update([
+            'active_provider' => null,
+            'active_model' => null,
+        ]);
+
+        $this->postJson(route('api.v1.telegram.webhooks.handle', $webhookKey), [
+            'update_id' => 1014,
+            'callback_query' => [
+                'id' => 'callback-follow-1',
+                'from' => ['id' => 784, 'username' => 'owner'],
+                'message' => [
+                    'message_id' => 21,
+                    'chat' => ['id' => 564],
+                ],
+                'data' => 'tg_follow:'.$assistantMessage->id.':0',
+            ],
+        ], [
+            'X-Telegram-Bot-Api-Secret-Token' => $installation->webhookSecret(),
+        ])->assertNoContent();
+
+        $this->assertDatabaseHas('telegram_messages', [
+            'telegram_chat_id' => '564',
+            'direction' => 'inbound',
+            'message_type' => 'callback_query',
+            'text' => 'How many classes today?',
+        ]);
+        $this->assertDatabaseHas('telegram_messages', [
+            'telegram_chat_id' => '564',
+            'direction' => 'outbound',
+            'text' => __('app.telegram_class_count_for_day', ['date' => '2026-06-28', 'count' => 0]),
+        ]);
+
+        Carbon::setTestNow();
+    }
+
+    public function test_owner_pending_action_inline_confirm_executes_booking_action(): void
+    {
+        Carbon::setTestNow(Carbon::parse('2026-06-28 09:00:00', 'UTC'));
+        Http::fake(['api.telegram.org/*' => Http::response(['ok' => true])]);
+        Mail::fake();
+
+        $owner = User::factory()->create(['phone' => '+380671112233']);
+        $account = Account::factory()->create(['country_code' => 'UA']);
+        $account->addOwner($owner);
+        PlatformAiSetting::query()->delete();
+        PlatformAiSetting::factory()->create([
+            'owner_ai_assistant_enabled' => true,
+            'active_provider' => null,
+            'active_model' => null,
+        ]);
+        [$installation, $webhookKey] = $this->ownerInstallation();
+
+        $location = Location::factory()->for($account)->create();
+        $room = Room::factory()->for($account)->for($location)->create();
+        $trainer = Trainer::factory()->for($account)->create();
+        $classType = ClassType::factory()->for($account)->create([
+            'schedule_kind' => ScheduleKind::GroupClass->value,
+        ]);
+        $scheduledClass = ScheduledClass::factory()
+            ->for($account)
+            ->for($location)
+            ->for($room)
+            ->for($classType)
+            ->for($trainer)
+            ->create([
+                'starts_at' => now()->addDay(),
+                'ends_at' => now()->addDay()->addHour(),
+                'capacity' => 8,
+                'title' => 'Pole Beginner',
+            ]);
+        $customer = Customer::factory()->for($account)->create(['name' => 'Аліна Тестова']);
+
+        TelegramChatAuthorization::factory()->for($account)->create([
+            'telegram_bot_installation_id' => $installation->id,
+            'user_id' => $owner->id,
+            'profile' => TelegramBotProfile::Owner->value,
+            'telegram_chat_id' => '565',
+            'telegram_user_id' => '785',
+        ]);
+
+        $this->postJson(route('api.v1.telegram.webhooks.handle', $webhookKey), [
+            'update_id' => 1015,
+            'message' => [
+                'message_id' => 22,
+                'chat' => ['id' => 565],
+                'from' => ['id' => 785, 'username' => 'owner'],
+                'text' => "book customer #{$customer->id} class #{$scheduledClass->id}",
+            ],
+        ], [
+            'X-Telegram-Bot-Api-Secret-Token' => $installation->webhookSecret(),
+        ])->assertNoContent();
+
+        $action = AiPendingAction::where('action_name', 'create-booking')->firstOrFail();
+
+        Http::assertSent(fn (Request $request): bool => str_ends_with($request->url(), '/sendMessage')
+            && $request['chat_id'] === '565'
+            && $request['text'] === __('app.assistant_pending_action_created')
+            && data_get($request->data(), 'reply_markup.inline_keyboard.0.0.callback_data') === 'tg_action:confirm:'.$action->id
+            && data_get($request->data(), 'reply_markup.inline_keyboard.0.1.callback_data') === 'tg_action:cancel:'.$action->id);
+
+        $this->postJson(route('api.v1.telegram.webhooks.handle', $webhookKey), [
+            'update_id' => 1016,
+            'callback_query' => [
+                'id' => 'callback-action-1',
+                'from' => ['id' => 785, 'username' => 'owner'],
+                'message' => [
+                    'message_id' => 23,
+                    'chat' => ['id' => 565],
+                ],
+                'data' => 'tg_action:confirm:'.$action->id,
+            ],
+        ], [
+            'X-Telegram-Bot-Api-Secret-Token' => $installation->webhookSecret(),
+        ])->assertNoContent();
+
+        $booking = ClassBooking::whereBelongsTo($account)->whereBelongsTo($customer)->firstOrFail();
+
+        $this->assertSame($scheduledClass->id, $booking->scheduled_class_id);
+        $this->assertSame(AiPendingAction::StatusExecuted, $action->refresh()->status);
+        $this->assertDatabaseHas('telegram_messages', [
+            'telegram_chat_id' => '565',
+            'direction' => 'outbound',
+            'text' => __('app.assistant_booking_created', ['id' => $booking->id]),
+        ]);
 
         Carbon::setTestNow();
     }
