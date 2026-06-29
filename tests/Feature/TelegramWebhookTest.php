@@ -6,6 +6,7 @@ use App\Enums\AiProvider;
 use App\Enums\ScheduleKind;
 use App\Enums\TelegramBotProfile;
 use App\Models\Account;
+use App\Models\AccountMembership;
 use App\Models\AiConversationMessage;
 use App\Models\AiPendingAction;
 use App\Models\ClassBooking;
@@ -108,6 +109,58 @@ class TelegramWebhookTest extends TestCase
             'telegram_chat_id' => '5511',
             'user_id' => $owner->id,
             'trainer_id' => $trainer->id,
+        ]);
+    }
+
+    public function test_owner_bot_deduplicates_owner_and_trainer_candidates_for_same_studio_phone(): void
+    {
+        Http::fake(['api.telegram.org/*' => Http::response(['ok' => true])]);
+
+        $owner = User::factory()->create(['phone' => '+380938436686']);
+        $trainerUser = User::factory()->create(['phone' => null]);
+        $account = Account::factory()->create(['name' => 'Charmpole', 'country_code' => 'UA']);
+        $account->addOwner($owner);
+        AccountMembership::factory()
+            ->for($account)
+            ->for($trainerUser, 'user')
+            ->create([
+                'role' => 'trainer',
+                'permissions' => ['interact_with_telegram_bot'],
+            ]);
+        $trainer = Trainer::factory()->for($account)->create([
+            'name' => 'Slastya',
+            'phone' => '+380938436686',
+            'user_id' => $trainerUser->id,
+            'is_active' => true,
+        ]);
+        [$installation, $webhookKey] = $this->ownerInstallation();
+
+        $this->postJson(route('api.v1.telegram.webhooks.handle', $webhookKey), [
+            'update_id' => 10012,
+            'message' => [
+                'message_id' => 102,
+                'chat' => ['id' => 5512],
+                'from' => ['id' => 7712, 'username' => 'owner'],
+                'contact' => [
+                    'user_id' => 7712,
+                    'phone_number' => '+380938436686',
+                ],
+            ],
+        ], [
+            'X-Telegram-Bot-Api-Secret-Token' => $installation->webhookSecret(),
+        ])->assertNoContent();
+
+        $this->assertFalse(TelegramAuthorizationSelectionCandidate::where('account_id', $account->id)->exists());
+        $this->assertDatabaseHas('telegram_chat_authorizations', [
+            'account_id' => $account->id,
+            'telegram_chat_id' => '5512',
+            'user_id' => $owner->id,
+            'trainer_id' => $trainer->id,
+        ]);
+        $this->assertDatabaseHas('telegram_messages', [
+            'telegram_chat_id' => '5512',
+            'direction' => 'outbound',
+            'text' => __('app.telegram_authorized'),
         ]);
     }
 
@@ -329,7 +382,9 @@ class TelegramWebhookTest extends TestCase
             ->where('direction', 'outbound')
             ->where('text', __('app.telegram_class_count_for_day', ['date' => '2026-06-28', 'count' => 0]))
             ->exists());
-        Http::assertNotSent(fn (Request $request): bool => str_ends_with($request->url(), '/sendChatAction'));
+        Http::assertSent(fn (Request $request): bool => str_ends_with($request->url(), '/sendChatAction')
+            && $request['chat_id'] === '557'
+            && $request['action'] === 'typing');
 
         Carbon::setTestNow();
     }
@@ -379,7 +434,9 @@ class TelegramWebhookTest extends TestCase
         $assistantMessage = AiConversationMessage::where('content', __('app.assistant_booking_dialog_customer_missing'))->firstOrFail();
 
         $this->assertSame('awaiting_customer', data_get($assistantMessage->metadata, 'booking_dialog.status'));
-        Http::assertNotSent(fn (Request $request): bool => str_ends_with($request->url(), '/sendChatAction'));
+        Http::assertSent(fn (Request $request): bool => str_ends_with($request->url(), '/sendChatAction')
+            && $request['chat_id'] === '563'
+            && $request['action'] === 'typing');
         Http::assertSent(fn (Request $request): bool => str_ends_with($request->url(), '/sendMessage')
             && $request['chat_id'] === '563'
             && $request['parse_mode'] === 'HTML'
@@ -499,7 +556,9 @@ class TelegramWebhookTest extends TestCase
         $assistantMessage = AiConversationMessage::where('content', $classChoiceMessage->text)->firstOrFail();
         $this->assertSame('awaiting_class', data_get($assistantMessage->metadata, 'booking_dialog.status'));
 
-        Http::assertNotSent(fn (Request $request): bool => str_ends_with($request->url(), '/sendChatAction'));
+        Http::assertSent(fn (Request $request): bool => str_ends_with($request->url(), '/sendChatAction')
+            && $request['chat_id'] === '566'
+            && $request['action'] === 'typing');
 
         $this->postJson(route('api.v1.telegram.webhooks.handle', $webhookKey), [
             'update_id' => 1018,
@@ -599,7 +658,7 @@ class TelegramWebhookTest extends TestCase
         Http::assertSent(fn (Request $request): bool => str_ends_with($request->url(), '/sendChatAction')
             && $request['chat_id'] === '558'
             && $request['action'] === 'typing');
-        $this->assertCount(2, collect(Http::recorded())
+        $this->assertCount(3, collect(Http::recorded())
             ->filter(fn (array $record): bool => str_ends_with($record[0]->url(), '/sendChatAction')));
         Http::assertSent(fn (Request $request): bool => str_ends_with($request->url(), '/sendMessage')
             && $request['chat_id'] === '558'
