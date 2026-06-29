@@ -77,6 +77,7 @@ class StudioAiInferenceTest extends TestCase
                 && str_contains($payload['messages'][0]['content'], 'Markdown-style bullets or numbered list items on separate lines')
                 && str_contains($payload['messages'][1]['content'], 'Studio context JSON')
                 && str_contains($payload['messages'][1]['content'], 'Help context JSON')
+                && ! str_contains($payload['messages'][1]['content'], 'Assistant capabilities JSON')
                 && str_contains($payload['messages'][1]['content'], 'customers_total')
                 && str_contains($payload['messages'][1]['content'], 'next_7_days')
                 && str_contains($payload['messages'][1]['content'], 'How many classes today?');
@@ -220,6 +221,16 @@ class StudioAiInferenceTest extends TestCase
         Http::assertSent(function (Request $request): bool {
             return str_contains($request->data()['messages'][0]['content'], 'asking who Ladna is')
                 && str_contains($request->data()['messages'][1]['content'], 'Привіт, хто ти і що вмієш?');
+        });
+        Http::assertSent(function (Request $request): bool {
+            $payload = $request->data();
+            $content = $payload['messages'][1]['content'] ?? '';
+
+            return str_contains($payload['messages'][0]['content'] ?? '', 'assistant_capabilities')
+                && str_contains($content, 'Assistant capabilities JSON')
+                && str_contains($content, 'create_group_booking_dialog')
+                && str_contains($content, 'get-class-bookings-for-day')
+                && str_contains($content, 'dashboard_chat');
         });
         Http::assertSentCount(2);
     }
