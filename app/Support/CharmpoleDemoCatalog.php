@@ -34,6 +34,7 @@ class CharmpoleDemoCatalog
             'default_currency' => 'UAH',
             'logo_path' => 'brand/charmpole-icon.svg',
             'brand_color' => '#d80a7d',
+            'studio_slogan' => 'Pole Dance, Exotic, Stretching і тренування для вашого ритму.',
             'timezone' => 'Europe/Kyiv',
             'enabled_schedule_kinds' => [
                 0 => 'group_class',
@@ -101,6 +102,7 @@ class CharmpoleDemoCatalog
             'name' => 'Студія Charmpole',
             'slug' => 'studio',
             'address' => 'Київ, проспект Берестейський (Перемоги), 56',
+            'google_maps_embed_url' => 'https://www.google.com/maps?q=%D0%9A%D0%B8%D1%97%D0%B2%2C%20%D0%BF%D1%80%D0%BE%D1%81%D0%BF%D0%B5%D0%BA%D1%82%20%D0%91%D0%B5%D1%80%D0%B5%D1%81%D1%82%D0%B5%D0%B9%D1%81%D1%8C%D0%BA%D0%B8%D0%B9%2056&output=embed',
             'phone' => '+380939470278',
             'email' => 'hello@charmpole.dance',
             'timezone' => 'Europe/Kyiv',
